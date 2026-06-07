@@ -1,0 +1,20 @@
+test/
+docs/
+.github/
+*.test.js
+*.test-helper.js
+
+# Development config files
+.eslintrc.json
+.prettierrc
+tsconfig.json
+jest.config.js
+
+# Binary build outputs
+dist/
+build/
+*.exe
+
+# Other
+Formula/
+scripts/

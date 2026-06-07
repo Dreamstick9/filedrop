@@ -1,0 +1,45 @@
+{
+  "name": "filedrop",
+  "version": "1.0.0",
+  "description": "Instantly host a file on a local web server with QR code for mobile transfer",
+  "main": "src/index.js",
+  "bin": {
+    "filedrop": "./bin/filedrop.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node ./bin/filedrop.js",
+    "test": "node --test src/*.test.js",
+    "build": "node scripts/build.js",
+    "lint": "eslint src/",
+    "prepublishOnly": "npm test && npm run lint"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
+  "keywords": [
+    "cli",
+    "file-transfer",
+    "qr-code",
+    "mdns",
+    "local-network",
+    "airdrop",
+    "ephemeral",
+    "http-server"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "mime": "^3.0.0",
+    "minimist": "^1.2.8",
+    "multicast-dns": "^7.2.5",
+    "qrcode": "^1.5.3"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1",
+    "eslint": "^8.57.0"
+  }
+}

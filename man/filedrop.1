@@ -1,0 +1,96 @@
+.TH FILEDROP 1 "June 2026" "1.0.0" "User Commands"
+.SH NAME
+filedrop \- Instantly host a file on a local web server with QR code for mobile transfer
+.SH SYNOPSIS
+.B filedrop
+.IR <file>
+[\fIoptions\fR]
+.SH DESCRIPTION
+.B filedrop
+is a developer utility that instantly hosts a single specified file on an ephemeral local HTTP server, broadcasts it over mDNS so nearby devices can discover it by name, renders a high-contrast QR code directly in the terminal, and self-terminates the moment the file has been successfully downloaded. Zero configuration. Zero residual processes. Pure utility.
+.SH OPTIONS
+.TP
+.BR \-p ", " \-\-port " \fIn\fR"
+Specific port to bind (default: auto 8000-8999).
+.TP
+.BR \-b ", " \-\-bind " \fIip\fR"
+Network interface IP to use (default: auto-detect).
+.TP
+.BR \-t ", " \-\-timeout " \fIs\fR"
+Seconds to wait for a connection (default: 300).
+.TP
+.BR \-n ", " \-\-name " \fIname\fR"
+Override mDNS service name.
+.TP
+.B \-\-no\-qr
+Suppress QR code, print URL only.
+.TP
+.B \-\-qr\-compact
+Print QR code without surrounding metadata box.
+.TP
+.B \-\-no\-mdns
+Disable mDNS broadcasting.
+.TP
+.BR \-v ", " \-\-verbose
+Verbose output (log all decisions).
+.TP
+.B \-\-no\-color
+Force no-color output (also respects NO_COLOR env var).
+.TP
+.B \-\-version
+Print version and exit.
+.TP
+.BR \-h ", " \-\-help
+Print help and exit.
+.SH EXAMPLES
+Serve an image:
+.RS
+.B filedrop ./photo.jpg
+.RE
+Serve a file with a custom port:
+.RS
+.B filedrop ./report.pdf --port 9000
+.RE
+Serve a file with verbose output logs:
+.RS
+.B filedrop ./video.mp4 --verbose
+.RE
+Suppress QR code (e.g. for SSH sessions):
+.RS
+.B filedrop ./archive.tar.gz --no-qr
+.RE
+.SH EXIT STATUS
+.TP
+.B 0
+Success (file transferred)
+.TP
+.B 1
+Invalid arguments
+.TP
+.B 2
+No network interface
+.TP
+.B 3
+Port exhausted
+.TP
+.B 4
+File not found/unreadable
+.TP
+.B 5
+Transfer timeout
+.TP
+.B 6
+Client disconnected mid-transfer
+.TP
+.B 130
+Interrupted (SIGINT)
+.SH ENVIRONMENT
+.TP
+.B NO_COLOR
+If set, filedrop will render the QR code using plain ASCII characters and disable all ANSI color codes in output.
+.SH BUGS
+Windows terminal support may be degraded on older versions of cmd.exe. Ensure you use Windows Terminal for the best QR rendering experience.
+.SH SEE ALSO
+\fBnode\fR(1)
+.SH AUTHOR
+filedrop contributors.
