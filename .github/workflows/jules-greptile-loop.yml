@@ -68,17 +68,13 @@ jobs:
         with:
           jules_api_key:       ${{ secrets.JULES_API_KEY }}
           starting_branch:     ${{ github.event.pull_request.head.ref }}
-          include_last_commit: true
           prompt: |
-            A Greptile automated code review gave PR #${{ github.event.pull_request.number }} a confidence score of ${{ steps.parse.outputs.score }}/5, which is below the required threshold of 4/5.
+            A Greptile code review gave PR #${{ github.event.pull_request.number }} a score of ${{ steps.parse.outputs.score }}/5 (threshold: 4/5).
 
-            Go to this pull request and read all review comments from the greptile-apps bot:
-            ${{ github.event.pull_request.html_url }}
+            Read the review at: ${{ github.event.pull_request.html_url }}
 
-            Fix every issue that Greptile flagged. Do not change anything unrelated to the review findings.
-
-            Rules:
-            - Fix only what Greptile flagged — no scope creep
-            - All existing tests must still pass after your changes
-            - Keep each change minimal and surgical
-            - Do not open a new PR; push your fix commits directly to the current branch: ${{ github.event.pull_request.head.ref }}
+            Fix every issue Greptile flagged. Rules:
+            - Fix only what Greptile flagged
+            - All existing tests must still pass
+            - Keep changes minimal and surgical
+            - Push fixes directly to branch: ${{ github.event.pull_request.head.ref }}
