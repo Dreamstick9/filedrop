@@ -56,10 +56,16 @@ jobs:
 
           if [ -n "$SCORE" ] && [ "$SCORE" -lt 4 ]; then
             echo "should_invoke=true"  >> "$GITHUB_OUTPUT"
+            echo "should_merge=false" >> "$GITHUB_OUTPUT"
             echo "✅ Score ${SCORE}/5 is below threshold — invoking Jules"
+          elif [ -n "$SCORE" ] && [ "$SCORE" -ge 4 ]; then
+            echo "should_invoke=false" >> "$GITHUB_OUTPUT"
+            echo "should_merge=true" >> "$GITHUB_OUTPUT"
+            echo "✅ Score ${SCORE}/5 meets threshold — ready to merge"
           else
             echo "should_invoke=false" >> "$GITHUB_OUTPUT"
-            echo "ℹ️  Score ${SCORE:-unknown}/5 meets threshold — skipping Jules"
+            echo "should_merge=false" >> "$GITHUB_OUTPUT"
+            echo "ℹ️  Score ${SCORE:-unknown}/5 is unknown — skipping Jules"
           fi
 
       - name: Invoke Jules to fix the issues
@@ -76,3 +82,9 @@ jobs:
             Fix every issue Greptile flagged. Rules:
             - Fix only what Greptile flagged
             - Keep changes minimal and surgical
+
+      - name: Automatically Merge PR
+        if: steps.parse.outputs.should_merge == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr merge ${{ github.event.pull_request.number }} --merge --admin
