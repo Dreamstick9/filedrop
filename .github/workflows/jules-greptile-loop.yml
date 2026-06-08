@@ -38,7 +38,7 @@ jobs:
 
       - name: Invoke Jules to fix the issues
         if: steps.parse.outputs.should_invoke == 'true'
-        uses: google-labs-code/jules-invoke@v1
+        uses: google-labs-code/jules-invoke@v1.0.0
         with:
           jules_api_key:      ${{ secrets.JULES_API_KEY }}
           # Tell Jules to work on the PR branch, not main
