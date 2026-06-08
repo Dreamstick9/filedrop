@@ -1,25 +1,36 @@
-name: Jules Auto-Fix Loop
+name: Jules Greptile Auto-Fix Loop
 
 on:
   pull_request_review:
     types: [submitted]
-  issue_comment:
-    types: [created]
 
 jobs:
-  jules-fix:
-    if: >
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@jules')) ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '@jules'))
+  jules-autofix:
+    name: Auto-fix Greptile Review
+    # Strictly trigger ONLY when the review is submitted by Greptile
+    if: >-
+      github.event.review.user.login == 'greptile-apps' ||
+      github.event.review.user.login == 'greptile[bot]'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
     steps:
-      - name: Checkout Code
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          
-      - name: Invoke Jules Agent
-        uses: google-labs-code/jules-invoke@v1
+
+      - name: Invoke Jules Auto-Fix
+        uses: google-labs-code/jules-invoke@v1 
         with:
           jules_api_key: ${{ secrets.JULES_API_KEY }}
-          prompt: "Read the latest review comments from Greptile on this PR. Implement the requested fixes, ensure tests pass, and push your commits back to this branch."
+          prompt: |
+            A PR review has been submitted by the Greptile bot. 
+            Review the text below:
+            
+            ${{ github.event.review.body }}
+            
+            Analyze the review text. Determine if fixes are needed based on the comments (for example, if the Confidence Score is < 4/5 or if explicit code changes are requested).
+            If fixes are required, generate the necessary fixes and push them back to the repository. If no fixes are needed, you may skip.
