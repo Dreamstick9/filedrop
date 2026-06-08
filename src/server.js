@@ -26,6 +26,7 @@ async function createServer({
   port,
   options = {},
   onTransferStart,
+  onTransferIdle,
   onTransferComplete,
   onTransferError
 }) {
@@ -74,7 +75,7 @@ async function createServer({
   // Login Page
   app.get('/login', (req, res) => {
     const transfersConsumed = successfulTransfers + activeDevices.size;
-    if (transfersConsumed >= transferLimit) {
+    if (!receiveMode && transfersConsumed >= transferLimit) {
       return res.status(410).send('This transfer is no longer available.');
     }
     res.send(`
@@ -161,10 +162,24 @@ async function createServer({
       `);
     });
 
-    app.post('/upload', requireAuth, uploadMulti, (req, res) => {
+    app.post('/upload', requireAuth, (req, res, next) => {
+      const deviceId = req.signedCookies.deviceId;
+      activeDevices.add(deviceId);
+      if (activeDevices.size === 1 && onTransferStart) onTransferStart();
+      
+      const onDone = () => {
+        if (activeDevices.has(deviceId)) {
+          activeDevices.delete(deviceId);
+          if (activeDevices.size === 0 && onTransferIdle) onTransferIdle();
+        }
+      };
+      res.on('finish', onDone);
+      res.on('close', onDone);
+      
+      next();
+    }, uploadMulti, (req, res) => {
       if (req.files && req.files.length > 0) {
         successfulDevices.add(req.signedCookies.deviceId);
-        if (onTransferStart) onTransferStart();
 
         req.files.forEach(f => {
           // Sanitize log output to prevent console injection
@@ -189,18 +204,24 @@ async function createServer({
       // concurrent requests from exceeding the limit.
       activeDevices.add(deviceId);
 
-      if (onTransferStart) onTransferStart();
+      if (activeDevices.size === 1 && onTransferStart) onTransferStart();
 
       // Handle aborting stream if connection drops
       req.on('close', () => {
         if (!res.writableEnded) {
-          activeDevices.delete(deviceId);
+          if (activeDevices.has(deviceId)) {
+            activeDevices.delete(deviceId);
+            if (activeDevices.size === 0 && onTransferIdle) onTransferIdle();
+          }
           onTransferError(new Error('ERR_CLIENT_DISCONNECTED'));
         }
       });
       
       const onStreamComplete = () => {
-         activeDevices.delete(deviceId);
+         if (activeDevices.has(deviceId)) {
+           activeDevices.delete(deviceId);
+           if (activeDevices.size === 0 && onTransferIdle) onTransferIdle();
+         }
          successfulTransfers++;
          successfulDevices.add(deviceId);
          if (successfulTransfers >= transferLimit) {
@@ -212,7 +233,7 @@ async function createServer({
         res.setHeader('Content-Type', 'application/zip');
         res.setHeader('Content-Disposition', `attachment; filename="${fileName}.zip"`);
 
-        const archive = archiver('zip', { zlib: { level: 1 } });
+        const archive = new archiver.ZipArchive({ zlib: { level: 1 } });
 
         archive.on('error', function(err) {
           onTransferError(err);

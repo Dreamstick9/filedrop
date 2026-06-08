@@ -36,7 +36,7 @@ Options:
 filedrop v${VERSION} — https://github.com/<org>/filedrop`);
 }
 
-function parseArgs(argv) {
+async function parseArgs(argv) {
   const args = minimist(argv.slice(2), {
     boolean: ['qr-compact', 'verbose', 'version', 'help', 'qr', 'mdns', 'color', 'receive'],
     string: ['port', 'bind', 'timeout', 'name', 'limit', 'pin'],
@@ -68,7 +68,65 @@ function parseArgs(argv) {
 
   let targetPath = args._.length > 0 ? args._[0] : null;
 
-  if (args.receive) {
+  if (!targetPath && !args.receive && process.stdout.isTTY) {
+    const inquirer = require('inquirer');
+    console.log('✨ Welcome to filedrop interactive mode!\n');
+    const answers = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'mode',
+        message: 'What would you like to do?',
+        choices: [
+          { name: '📤 Send a file or directory', value: 'send' },
+          { name: '📥 Receive files to a directory', value: 'receive' }
+        ]
+      },
+      {
+        type: 'input',
+        name: 'target',
+        message: (ans) => ans.mode === 'send' ? 'Enter the path to send (e.g. ./photo.jpg):' : 'Enter the directory to save received files (leave blank for current directory):',
+        validate: (input, ans) => {
+          if (ans.mode === 'receive' && !input) return true;
+          if (!input) return 'Path cannot be empty';
+          const p = path.resolve(input);
+          if (!fs.existsSync(p)) return `Path does not exist: ${p}`;
+          return true;
+        }
+      },
+      {
+        type: 'input',
+        name: 'limit',
+        message: 'How many successful downloads should be allowed?',
+        default: '1',
+        when: (ans) => ans.mode === 'send',
+        validate: (input) => !isNaN(parseInt(input, 10)) && parseInt(input, 10) > 0 ? true : 'Must be a positive integer'
+      },
+      {
+        type: 'input',
+        name: 'pin',
+        message: 'Enter a 4-digit PIN (or leave blank to auto-generate):',
+        validate: (input) => {
+          if (!input) return true;
+          return /^\\d{4}$/.test(input) ? true : 'PIN must be exactly 4 digits';
+        }
+      }
+    ]);
+
+    if (answers.mode === 'receive') {
+      args.receive = true;
+    }
+    
+    if (answers.mode === 'receive' && !answers.target) {
+      targetPath = process.cwd();
+    } else {
+      targetPath = path.resolve(answers.target);
+    }
+    
+    if (answers.limit) args.limit = answers.limit;
+    if (answers.pin) args.pin = answers.pin;
+    
+    console.log(); // Add a newline before the server starts
+  } else if (args.receive) {
     targetPath = targetPath ? path.resolve(targetPath) : process.cwd();
   } else {
     if (!targetPath) {
