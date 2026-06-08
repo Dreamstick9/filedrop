@@ -20,6 +20,15 @@ npx @dreamstick/filedrop ./photo.jpg
 
 ## Usage
 
+**Interactive Mode (New!)**
+Simply run `filedrop` with no arguments to launch the butter-smooth Interactive Terminal Wizard. It will guide you through file selection, send/receive modes, limits, and PIN setup.
+
+```sh
+filedrop
+```
+
+**Manual CLI Mode**
+You can still use flags for quick one-off commands:
 ```sh
 filedrop ./photo.jpg         # serve an image
 filedrop ./report.pdf        # serve a document
