@@ -64,42 +64,15 @@ jobs:
 
       - name: Invoke Jules to fix the issues
         if: steps.parse.outputs.should_invoke == 'true'
-        env:
-          JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
-          STARTING_BRANCH: ${{ github.event.pull_request.head.ref }}
-          REPO_FULL_NAME: ${{ github.repository }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          SCORE: ${{ steps.parse.outputs.score }}
-        run: |
-          PROMPT=$(cat <<EOF
-          A Greptile code review gave PR #${{ github.event.pull_request.number }} a score of $SCORE/5 (threshold: 4/5).
+        uses: google-labs-code/jules-invoke@v1.0.0
+        with:
+          jules_api_key:       ${{ secrets.JULES_API_KEY }}
+          starting_branch:     ${{ github.event.pull_request.head.ref }}
+          prompt: |
+            A Greptile code review gave PR #${{ github.event.pull_request.number }} a score of ${{ steps.parse.outputs.score }}/5 (threshold: 4/5).
 
-          Read the review at: $PR_URL
+            Read the review at: ${{ github.event.pull_request.html_url }}
 
-          Fix every issue Greptile flagged. Rules:
-          - Fix only what Greptile flagged
-          - Keep changes minimal and surgical
-          - Push your fixes DIRECTLY to the branch: $STARTING_BRANCH
-          - DO NOT create a new pull request. Run `git push origin $STARTING_BRANCH` to update the existing PR.
-          EOF
-          )
-
-          jq -n \
-            --arg prompt "$PROMPT" \
-            --arg branch "$STARTING_BRANCH" \
-            --arg repo "$REPO_FULL_NAME" '{
-              "prompt": $prompt,
-              "sourceContext": {
-                "source": ("sources/github/" + $repo),
-                "githubRepoContext": {
-                  "startingBranch": $branch
-                }
-              },
-              "requirePlanApproval": false
-            }' > jules_payload.json
-
-          curl -s 'https://jules.googleapis.com/v1alpha/sessions' \
-            -X POST \
-            -H "Content-Type: application/json" \
-            -H "X-Goog-Api-Key: $JULES_API_KEY" \
-            -d @jules_payload.json
+            Fix every issue Greptile flagged. Rules:
+            - Fix only what Greptile flagged
+            - Keep changes minimal and surgical
