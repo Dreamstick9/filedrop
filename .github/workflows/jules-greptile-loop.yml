@@ -2,7 +2,7 @@ name: Greptile-Jules Auto-Fix Loop
 
 on:
   pull_request_review:
-    types: [submitted]
+    types: [submitted, edited]
 
 jobs:
   invoke-jules-on-low-score:
