@@ -46,7 +46,7 @@ async function main() {
   // 3. Discover network interface -> IP
   let ip;
   try {
-    const iface = await network.getInterface(config.bind);
+    const iface = await network.getInterface({ bind: config.bind, verbose: config.verbose });
     ip = iface.info.address;
   } catch (err) {
     console.error(`filedrop: error: ${err.message || 'No network interface found'}`);
@@ -71,17 +71,16 @@ async function main() {
 
   // 5. Initialize mDNS module (non-blocking)
   let mdnsName = config.name || filename.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().substring(0, 15) + '-filedrop';
+  const transferId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
   if (config.mdns) {
     mdns.announce({
-      name: mdnsName,
+      mdnsName: config.name,
+      filename: filename,
+      size: config.fileSize,
+      transferId: transferId,
+      ip: ip,
       port: port,
-      txt: {
-        path: '/',
-        file: encodeURIComponent(filename),
-        size: config.fileSize.toString(),
-        v: '1',
-        id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2)
-      }
+      verbose: config.verbose
     }).catch(err => {
       // fire and forget with error callback
       if (config.verbose) {
@@ -111,7 +110,7 @@ async function main() {
     onTransferStart: () => {
       isTransferring = true;
       clearTimeout(timeoutHandle); // reset/cancel connection timeout
-      qr.updateStatus('transferring');
+      qr.updateStatus('transferring', { color: config.color });
     },
     onTransferComplete: () => {
       isTransferring = false;
@@ -125,10 +124,10 @@ async function main() {
 
   // 7. Render and print QR code + metadata box
   if (config.qr) {
-    const qrString = qr.renderQR(url, { compact: config.qrCompact });
+    const qrString = qr.renderQR(url, { compact: config.qrCompact, noQr: false, color: config.color });
     console.log(qrString);
     if (!config.qrCompact) {
-      console.log(qr.renderMetadataBox(filename, config.fileSize + ' bytes', url, config.mdns ? mdnsName : null));
+      console.log(qr.renderMetadataBox(filename, config.fileSize + ' bytes', url, config.mdns ? mdnsName : null, { color: config.color }));
     }
   } else {
     console.log(`URL: ${url}`);
@@ -193,7 +192,7 @@ async function main() {
     clearTimeout(timeoutHandle);
     
     // 11. Update terminal status line
-    qr.updateStatus('done');
+    qr.updateStatus('done', { color: config.color });
     
     // 12. Deregister mDNS
     if (config.mdns && mdns.teardown) {
