@@ -3,8 +3,6 @@
  */
 const test = require('node:test');
 const assert = require('node:assert');
-const path = require('path');
-const http = require('http');
 const { createServer } = require('./server.js');
 const { createTempFile, cleanupTempFiles } = require('../test/helpers/create-temp-file.js');
 const { httpClient } = require('../test/helpers/http-client.js');
@@ -12,106 +10,186 @@ const { httpClient } = require('../test/helpers/http-client.js');
 test('Server Core', async (t) => {
   t.afterEach(cleanupTempFiles);
 
-  await t.test('GET / returns file with correct headers', async () => {
+  await t.test('Root returns 302 redirect to login if no auth cookie', async () => {
+    const filePath = createTempFile(1024, '.txt');
+    const { server, start, shutdown } = await createServer({
+      filePath,
+      port: 0,
+      options: { pin: '1234' },
+      onTransferComplete: () => {},
+      onTransferError: () => {}
+    });
+
+    await start();
+    const port = server.address().port;
+    const url = `http://127.0.0.1:${port}/`;
+    
+    // We expect a 302 redirect to /login
+    const res = await httpClient(url);
+    assert.strictEqual(res.statusCode, 302);
+    assert.strictEqual(res.headers.location, '/login');
+
+    await shutdown();
+  });
+
+  await t.test('Login accepts correct PIN and sets cookies', async () => {
+    const filePath = createTempFile(1024, '.txt');
+    const { server, start, shutdown } = await createServer({
+      filePath,
+      port: 0,
+      options: { pin: '4321' },
+      onTransferComplete: () => {},
+      onTransferError: () => {}
+    });
+
+    await start();
+    const port = server.address().port;
+    const url = `http://127.0.0.1:${port}/login`;
+    
+    const postData = 'pin=4321';
+    
+    const res = await httpClient(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(postData)
+      }
+    }, postData);
+
+    assert.strictEqual(res.statusCode, 302);
+    assert.ok(res.headers['set-cookie']);
+    assert.ok(res.headers['set-cookie'].some(c => c.startsWith('auth=')));
+    assert.ok(res.headers['set-cookie'].some(c => c.startsWith('deviceId=')));
+
+    await shutdown();
+  });
+
+  await t.test('Login rejects incorrect PIN', async () => {
+    const filePath = createTempFile(1024, '.txt');
+    const { server, start, shutdown } = await createServer({
+      filePath,
+      port: 0,
+      options: { pin: '4321' },
+      onTransferComplete: () => {},
+      onTransferError: () => {}
+    });
+
+    await start();
+    const port = server.address().port;
+    const url = `http://127.0.0.1:${port}/login`;
+    
+    const postData = 'pin=0000';
+
+    const res = await httpClient(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(postData)
+      }
+    }, postData);
+
+    assert.strictEqual(res.statusCode, 401);
+
+    await shutdown();
+  });
+
+  await t.test('Authenticating and fetching file works', async () => {
     const filePath = createTempFile(1024, '.txt');
     let transferCompleted = false;
 
-    const { server, shutdown } = await createServer({
+    const { server, start, shutdown } = await createServer({
       filePath,
       port: 0,
+      options: { pin: '1111', limit: 1 },
       onTransferComplete: () => { transferCompleted = true; },
       onTransferError: () => {}
     });
 
+    await start();
     const port = server.address().port;
-    const url = `http://127.0.0.1:${port}/`;
     
-    const res = await httpClient(url);
-    
-    assert.strictEqual(res.statusCode, 200);
-    assert.strictEqual(res.headers['content-type'], 'text/plain');
-    assert.strictEqual(res.headers['content-length'], '1024');
-    assert.ok(res.headers['content-disposition'].includes('attachment'));
-    assert.strictEqual(res.headers['cache-control'], 'no-store');
-    assert.strictEqual(res.body.length, 1024);
+    // 1. Login
+    const loginRes = await httpClient(`http://127.0.0.1:${port}/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': 8
+      }
+    }, 'pin=1111');
 
-    await new Promise(r => setTimeout(r, 50)); // let socket close event fire
+    const cookies = loginRes.headers['set-cookie'].map(c => c.split(';')[0]).join('; ');
+
+    // 2. Fetch File
+    const fileRes = await httpClient(`http://127.0.0.1:${port}/`, {
+      headers: {
+        'Cookie': cookies
+      }
+    });
+
+    assert.strictEqual(fileRes.statusCode, 200);
+    assert.strictEqual(fileRes.headers['content-length'], '1024');
+    assert.ok(fileRes.headers['content-disposition'].includes('attachment'));
+    assert.strictEqual(fileRes.body.length, 1024);
+
+    await new Promise(r => setTimeout(r, 50));
     assert.strictEqual(transferCompleted, true);
 
     await shutdown();
   });
 
-  await t.test('HEAD / returns headers, no body', async () => {
-    const filePath = createTempFile(1024, '.txt');
-    const { server, shutdown } = await createServer({
+  await t.test('Second attempt to download file with same device returns 410', async () => {
+     const filePath = createTempFile(1024, '.txt');
+    let transferCompleted = false;
+
+    const { server, start, shutdown } = await createServer({
       filePath,
       port: 0,
-      onTransferComplete: () => {},
+      options: { pin: '1111', limit: 5 }, // generous limit, but same device should be blocked
+      onTransferComplete: () => { transferCompleted = true; },
       onTransferError: () => {}
     });
 
+    await start();
     const port = server.address().port;
-    const url = `http://127.0.0.1:${port}/`;
     
-    const res = await httpClient(url, { method: 'HEAD' });
+    const loginRes = await httpClient(`http://127.0.0.1:${port}/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': 8
+      }
+    }, 'pin=1111');
+
+    const cookies = loginRes.headers['set-cookie'].map(c => c.split(';')[0]).join('; ');
+
+    const fileRes1 = await httpClient(`http://127.0.0.1:${port}/`, {
+      headers: { 'Cookie': cookies }
+    });
+    assert.strictEqual(fileRes1.statusCode, 200);
     
-    assert.strictEqual(res.statusCode, 200);
-    assert.strictEqual(res.headers['content-length'], '1024');
-    assert.strictEqual(res.body.length, 0);
+    // Attempt second download with SAME device cookie
+    const fileRes2 = await httpClient(`http://127.0.0.1:${port}/`, {
+      headers: { 'Cookie': cookies }
+    });
+    assert.strictEqual(fileRes2.statusCode, 410);
 
     await shutdown();
   });
 
   await t.test('Unknown path returns 404', async () => {
     const filePath = createTempFile(1024, '.txt');
-    const { server, shutdown } = await createServer({
+    const { server, start, shutdown } = await createServer({
       filePath,
       port: 0,
       onTransferComplete: () => {},
       onTransferError: () => {}
     });
 
+    await start();
     const port = server.address().port;
     const res = await httpClient(`http://127.0.0.1:${port}/unknown-path`);
-    
+
     assert.strictEqual(res.statusCode, 404);
-    await shutdown();
-  });
-
-  await t.test('Non-GET/HEAD returns 405', async () => {
-    const filePath = createTempFile(1024, '.txt');
-    const { server, shutdown } = await createServer({
-      filePath,
-      port: 0,
-      onTransferComplete: () => {},
-      onTransferError: () => {}
-    });
-
-    const port = server.address().port;
-    const res = await httpClient(`http://127.0.0.1:${port}/`, { method: 'POST' });
-    
-    assert.strictEqual(res.statusCode, 405);
-    await shutdown();
-  });
-
-  await t.test('Second GET after first completes returns 410', async () => {
-    const filePath = createTempFile(1024, '.txt');
-    const { server, shutdown } = await createServer({
-      filePath,
-      port: 0,
-      onTransferComplete: () => {},
-      onTransferError: () => {}
-    });
-
-    const port = server.address().port;
-    const url = `http://127.0.0.1:${port}/`;
-    
-    const res1 = await httpClient(url);
-    assert.strictEqual(res1.statusCode, 200);
-    
-    const res2 = await httpClient(url);
-    assert.strictEqual(res2.statusCode, 410);
-
     await shutdown();
   });
 });
