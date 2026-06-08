@@ -1,0 +1,4 @@
+{
+  "triggerOnUpdates": true,
+  "customInstructions": "Review the code and evaluate your confidence score out of 5. If the score is less than 4/5, or if there are unresolved bugs, you must include the exact phrase \"@jules please fix\" in your review summary. If the score is 4/5 or higher, do not tag anyone."
+}

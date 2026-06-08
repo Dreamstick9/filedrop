@@ -38,7 +38,7 @@ const qr = require('./qr');
 
 async function main() {
   // 1. Parse and validate arguments
-  const config = parseArgs(process.argv);
+  const config = await parseArgs(process.argv);
   
   // 2. Resolve absolute file path
   // Handled inside parseArgs, which returns an absolute config.filePath
@@ -116,6 +116,10 @@ async function main() {
       clearTimeout(timeoutHandle); // reset/cancel connection timeout
       qr.updateStatus('transferring', { color: config.color });
     },
+    onTransferIdle: () => {
+      isTransferring = false;
+      qr.updateStatus('idle', { color: config.color });
+    },
     onTransferComplete: () => {
       isTransferring = false;
       transferCompleteResolve();
@@ -158,6 +162,7 @@ async function main() {
     if (isShuttingDown) return;
     
     if (isTransferring) {
+      isShuttingDown = true;
       console.log('\nTransfer in progress — waiting for completion...');
       // Wait up to 10 seconds before force-exiting
       setTimeout(() => {
