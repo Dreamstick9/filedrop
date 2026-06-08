@@ -7,7 +7,7 @@ const http = require('http');
  * @param {Object} options - Request options.
  * @returns {Promise<{ statusCode: number, headers: Object, body: Buffer }>}
  */
-function httpClient(url, options = {}) {
+function httpClient(url, options = {}, postData = null) {
   return new Promise((resolve, reject) => {
     const req = http.request(url, { ...options }, (res) => {
       const chunks = [];
@@ -22,6 +22,9 @@ function httpClient(url, options = {}) {
     });
     
     req.on('error', reject);
+    if (postData) {
+      req.write(postData);
+    }
     req.end();
   });
 }
