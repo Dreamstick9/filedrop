@@ -42,7 +42,7 @@ async function createServer({
   const receiveMode = options.receive;
   const transferLimit = options.limit || 1;
   const pin = options.pin;
-  
+
   let successfulTransfers = 0;
   const activeDevices = new Set();
   const successfulDevices = new Set();
@@ -55,10 +55,13 @@ async function createServer({
 
   // Authentication Middleware
   const requireAuth = (req, res, next) => {
-    if (!receiveMode && successfulTransfers >= transferLimit && !successfulDevices.has(req.signedCookies.deviceId)) {
+    // Determine the total number of transfers consumed (completed + actively in progress)
+    const transfersConsumed = successfulTransfers + activeDevices.size;
+
+    if (!receiveMode && transfersConsumed >= transferLimit && !successfulDevices.has(req.signedCookies.deviceId) && !activeDevices.has(req.signedCookies.deviceId)) {
       return res.status(410).send('This transfer is no longer available.');
     }
-    
+
     if (req.signedCookies.auth === 'true' && req.signedCookies.deviceId) {
       if (!receiveMode && successfulDevices.has(req.signedCookies.deviceId) && req.path === '/') {
         return res.status(410).send('You have already completed this transfer.');
@@ -70,7 +73,8 @@ async function createServer({
 
   // Login Page
   app.get('/login', (req, res) => {
-    if (successfulTransfers >= transferLimit) {
+    const transfersConsumed = successfulTransfers + activeDevices.size;
+    if (transfersConsumed >= transferLimit) {
       return res.status(410).send('This transfer is no longer available.');
     }
     res.send(`
@@ -179,21 +183,24 @@ async function createServer({
   } else {
     // Send Mode Setup
     app.get('/', requireAuth, async (req, res) => {
-      if (onTransferStart) onTransferStart();
       const deviceId = req.signedCookies.deviceId;
+
+      // Since express executes in a single thread, adding to activeDevices here prevents
+      // concurrent requests from exceeding the limit.
+      activeDevices.add(deviceId);
+
+      if (onTransferStart) onTransferStart();
 
       // Handle aborting stream if connection drops
       req.on('close', () => {
         if (!res.writableEnded) {
+          activeDevices.delete(deviceId);
           onTransferError(new Error('ERR_CLIENT_DISCONNECTED'));
         }
       });
       
       const onStreamComplete = () => {
-         // Fix race condition: only update variables locally and safely
-         // Actually, if we use Node.js express properly, this executes in a single thread,
-         // however if multiple responses start and finish, it might interleave.
-         // Let's ensure successfulTransfers is correctly incremented.
+         activeDevices.delete(deviceId);
          successfulTransfers++;
          successfulDevices.add(deviceId);
          if (successfulTransfers >= transferLimit) {
