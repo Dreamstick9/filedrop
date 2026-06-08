@@ -41,9 +41,8 @@ function generateMatrix(url) {
  * @returns {string} The rendered QR code.
  */
 function renderQR(url, options = {}) {
-  const { compact = false, noQr = false } = options;
+  const { compact = false, noQr = false, color = supportsColor() } = options;
   const isTTY = process.stdout.isTTY;
-  const color = supportsColor();
   const columns = process.stdout.columns || 80;
 
   if (!isTTY) {
@@ -132,8 +131,8 @@ let lastBoxWidth = 43;
  * @param {string} mdnsName 
  * @returns {string} The formatted metadata box.
  */
-function renderMetadataBox(filename, sizeHuman, url, mdnsName) {
-  const color = supportsColor();
+function renderMetadataBox(filename, sizeHuman, url, mdnsName, options = {}) {
+  const { color = supportsColor() } = options;
   
   const l1Len = 6 + filename.length + 2 + sizeHuman.length;
   const l2Len = 6 + url.length;
@@ -198,9 +197,9 @@ function renderMetadataBox(filename, sizeHuman, url, mdnsName) {
  * Updates the transfer status in the terminal.
  * @param {'transferring' | 'done'} status
  */
-function updateStatus(status) {
+function updateStatus(status, options = {}) {
   if (!process.stdout.isTTY) return;
-  const color = supportsColor();
+  const { color = supportsColor() } = options;
   
   let prefix, msg, msgLen;
   if (status === 'transferring') {

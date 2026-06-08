@@ -1,10 +1,10 @@
 {
-  "name": "filedrop",
+  "name": "@dreamstick/filedrop",
   "version": "1.0.0",
   "description": "Instantly host a file on a local web server with QR code for mobile transfer",
   "main": "src/index.js",
   "bin": {
-    "filedrop": "./bin/filedrop.js"
+    "filedrop": "bin/filedrop.js"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -30,7 +30,7 @@
     "ephemeral",
     "http-server"
   ],
-  "author": "",
+  "author": "dreamstick",
   "license": "MIT",
   "dependencies": {
     "mime": "^3.0.0",
@@ -39,7 +39,22 @@
     "qrcode": "^1.5.3"
   },
   "devDependencies": {
-    "pkg": "^5.8.1",
-    "eslint": "^8.57.0"
-  }
+    "@eslint/js": "^10.0.1",
+    "eslint": "^8.57.1",
+    "globals": "^17.6.0",
+    "pkg": "^5.8.1"
+  },
+  "directories": {
+    "doc": "docs",
+    "man": "man",
+    "test": "test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dreamstick9/filedrop.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Dreamstick9/filedrop/issues"
+  },
+  "homepage": "https://github.com/Dreamstick9/filedrop#readme"
 }

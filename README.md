@@ -1,8 +1,8 @@
-# filedrop
+# @dreamstick/filedrop
 
 Instantly host a file on a local web server with QR code for mobile transfer.
 
-![npm version](https://img.shields.io/npm/v/filedrop) ![CI status](https://img.shields.io/github/actions/workflow/status/org/filedrop/test.yml) ![License](https://img.shields.io/npm/l/filedrop)
+![npm version](https://img.shields.io/npm/v/@dreamstick/filedrop) ![CI status](https://img.shields.io/github/actions/workflow/status/Dreamstick9/filedrop/test.yml) ![License](https://img.shields.io/npm/l/@dreamstick/filedrop)
 
 Run filedrop, scan with your phone, done.
 
@@ -12,13 +12,10 @@ Run filedrop, scan with your phone, done.
 
 ```sh
 # npm (recommended)
-npm install -g filedrop
+npm install -g @dreamstick/filedrop
 
 # npx (no install)
-npx filedrop ./photo.jpg
-
-# Homebrew (macOS)
-brew install filedrop
+npx @dreamstick/filedrop ./photo.jpg
 ```
 
 ## Usage
@@ -32,7 +29,6 @@ filedrop ./video.mp4 -v      # serve with verbose output
 ## How it works
 
 - **Server**: Binds to a local port and serves the exact file specified.
-- **mDNS**: Broadcasts a local network name (e.g. `photo-filedrop.local`).
 - **QR**: Renders a high-contrast terminal QR code for instantaneous scanning.
 - **Auto-terminate**: Automatically shuts down and exits after a single successful transfer.
 
@@ -41,14 +37,10 @@ filedrop ./video.mp4 -v      # serve with verbose output
 | Option | Description |
 | --- | --- |
 | `-p, --port <n>` | Specific port to bind (default: auto 8000-8999) |
-| `-b, --bind <ip>` | Network interface IP to use (default: auto-detect) |
 | `-t, --timeout <s>` | Seconds to wait for a connection (default: 300) |
-| `-n, --name <name>` | Override mDNS service name |
 | `--no-qr` | Suppress QR code, print URL only |
 | `--qr-compact` | Print QR code without surrounding metadata box |
-| `--no-mdns` | Disable mDNS broadcasting |
 | `--verbose, -v` | Verbose output (log all decisions) |
-| `--no-color` | Force no-color output (also respects NO_COLOR env var) |
 | `--version` | Print version and exit |
 | `--help, -h` | Print help and exit |
 
@@ -59,16 +51,13 @@ macOS ✅ | Linux ✅ | Windows ⚠️ (ANSI codes require Windows Terminal)
 ## FAQ
 
 **My phone can't connect**
-Make sure both your computer and phone are on the exact same Wi-Fi network and subnet. If you have an active VPN, try disabling it or use `--bind` to select the correct network interface.
+Make sure both your computer and phone are on the exact same Wi-Fi network and subnet. If you have an active VPN, try disabling it.
 
 **The QR code looks garbled**
 Terminal line height and width can affect the rendering of block characters. Make sure you use a modern terminal, or adjust your font settings.
 
-**mDNS isn't working**
-mDNS broadcasting can be filtered by some routers and is not universally supported in all environments. The IP-based QR code always works as a reliable fallback.
-
 **Can I serve a directory?**
-No, `filedrop` is strictly for transferring single files. If you need to transfer a directory, create a zip archive first.
+No, `@dreamstick/filedrop` is strictly for transferring single files. If you need to transfer a directory, create a zip archive first.
 
 **Is this secure?**
 For local network operations, yes. It closes immediately after the first transfer, but it does serve files over unencrypted HTTP. See [security.md](docs/security.md) for more info on the threat model.

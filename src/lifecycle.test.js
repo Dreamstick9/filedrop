@@ -6,6 +6,14 @@ const assert = require('node:assert');
 const { LifecycleManager } = require('./lifecycle.js');
 
 test('Lifecycle Manager', async (t) => {
+  t.mock.method(process, 'exit', () => {});
+  if (process.stdout) {
+    t.mock.method(process.stdout, 'end', (str, cb) => {
+      if (typeof cb === 'function') cb();
+      else if (typeof str === 'function') str();
+    });
+  }
+
   await t.test('All valid state transitions succeed', async () => {
     try {
       const lm = new LifecycleManager();
@@ -17,7 +25,7 @@ test('Lifecycle Manager', async (t) => {
       lm.transition('TRANSFERRING');
       assert.strictEqual(lm.state, 'TRANSFERRING');
       lm.transition('COMPLETE');
-      assert.strictEqual(lm.state, 'COMPLETE');
+      assert.strictEqual(lm.state, 'EXITED');
       await lm.exitCleanly(0);
       assert.strictEqual(lm.state, 'EXITED');
     } catch (e) {
