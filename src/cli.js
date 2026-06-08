@@ -107,7 +107,7 @@ async function parseArgs(argv) {
         message: 'Enter a 4-digit PIN (or leave blank to auto-generate):',
         validate: (input) => {
           if (!input) return true;
-          return /^\d{5}$/.test(input) ? true : 'PIN must be exactly 4 digits';
+          return /^\d{4}$/.test(input) ? true : 'PIN must be exactly 4 digits';
         }
       }
     ]);
