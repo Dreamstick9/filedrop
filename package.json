@@ -37,6 +37,7 @@
     "cookie-parser": "^1.4.7",
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
+    "inquirer": "^8.2.7",
     "mime": "^3.0.0",
     "minimist": "^1.2.8",
     "multer": "^2.1.1",
