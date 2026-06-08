@@ -1,102 +1,60 @@
 name: Greptile-Jules Auto-Fix Loop
 
 on:
-  # Fires when Greptile (or anyone) submits a PR review
   pull_request_review:
     types: [submitted]
 
-  # Fires when any commit is pushed to a non-main branch
-  push:
-    branches-ignore:
-      - main
-
 jobs:
-  # ──────────────────────────────────────────────
-  # JOB 1: Greptile reviewed → score < 4 → tag Jules
-  # ──────────────────────────────────────────────
-  tag-jules-on-low-score:
-    name: Tag Jules if Greptile Score < 4
+  invoke-jules-on-low-score:
+    name: Invoke Jules if Greptile Score < 4
+    # Only run when the reviewer is the Greptile bot
     if: >-
-      github.event_name == 'pull_request_review' &&
-      (github.event.review.user.login == 'greptile-apps[bot]' ||
-       github.event.review.user.login == 'greptile-apps')
+      github.event.review.user.login == 'greptile-apps[bot]' ||
+      github.event.review.user.login == 'greptile-apps'
     runs-on: ubuntu-latest
     permissions:
+      contents: write
       pull-requests: write
 
     steps:
-      - name: Parse score and tag Jules if below threshold
+      - name: Parse Greptile confidence score
+        id: parse
         env:
           REVIEW_BODY: ${{ github.event.review.body }}
-          GH_TOKEN:    ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER:   ${{ github.event.pull_request.number }}
-          REPO:        ${{ github.repository }}
         run: |
-          # Pull the numeric score out of "Confidence Score: N/5"
           SCORE=$(echo "$REVIEW_BODY" \
             | grep -oP '(?i)confidence score:\s*\K[0-9]+(?=\s*/\s*5)' \
             | head -1)
 
-          echo "Greptile confidence score: ${SCORE:-not found}"
+          echo "Parsed score: ${SCORE:-not found}"
+          echo "score=${SCORE}" >> "$GITHUB_OUTPUT"
 
-          if [ -z "$SCORE" ]; then
-            echo "No score detected in review body — skipping."
-            exit 0
-          fi
-
-          if [ "$SCORE" -lt 4 ]; then
-            gh pr comment "$PR_NUMBER" --repo "$REPO" --body \
-              "@jules Greptile gave this PR a confidence score of **${SCORE}/5** — please review the findings below and push a fix.
-
-          ---
-
-          $REVIEW_BODY"
+          # Set a clean boolean so the next step's `if:` is unambiguous
+          if [ -n "$SCORE" ] && [ "$SCORE" -lt 4 ]; then
+            echo "should_invoke=true"  >> "$GITHUB_OUTPUT"
           else
-            echo "Score ${SCORE}/5 meets threshold — no Jules intervention needed."
+            echo "should_invoke=false" >> "$GITHUB_OUTPUT"
           fi
 
-  # ──────────────────────────────────────────────
-  # JOB 2: Jules pushed a fix → notify on the PR
-  # ──────────────────────────────────────────────
-  notify-on-jules-push:
-    name: Notify PR when Jules Pushes a Fix
-    if: >-
-      github.event_name == 'push' &&
-      (contains(github.event.head_commit.author.name, 'jules') ||
-       contains(github.event.head_commit.author.email, 'jules'))
-    runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
+      - name: Invoke Jules to fix the issues
+        if: steps.parse.outputs.should_invoke == 'true'
+        uses: google-labs-code/jules-invoke@v1
+        with:
+          jules_api_key:      ${{ secrets.JULES_API_KEY }}
+          # Tell Jules to work on the PR branch, not main
+          starting_branch:    ${{ github.event.pull_request.head.ref }}
+          include_last_commit: true
+          prompt: |
+            A Greptile automated code review gave this PR a confidence score of ${{ steps.parse.outputs.score }}/5, which is below the required threshold of 4/5.
 
-    steps:
-      - name: Find open PR for this branch
-        id: find-pr
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO:     ${{ github.repository }}
-          BRANCH:   ${{ github.ref_name }}
-        run: |
-          PR_NUMBER=$(gh pr list \
-            --repo  "$REPO"   \
-            --head  "$BRANCH" \
-            --state open      \
-            --json  number    \
-            --jq    '.[0].number // empty')
+            Your job is to read the review findings below and fix every issue that is flagged as P0 or P1. Do not change anything unrelated to the review findings.
 
-          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+            Rules:
+            - Fix only what Greptile flagged — no scope creep
+            - All existing tests must still pass after your changes
+            - Keep each change minimal and surgical
+            - Do not open a new PR; push your fix commits directly to the current branch: ${{ github.event.pull_request.head.ref }}
 
-      - name: Post Jules fix notification
-        if: steps.find-pr.outputs.pr_number != ''
-        env:
-          GH_TOKEN:    ${{ secrets.GITHUB_TOKEN }}
-          REPO:        ${{ github.repository }}
-          PR_NUMBER:   ${{ steps.find-pr.outputs.pr_number }}
-          COMMIT_SHA:  ${{ github.sha }}
-          COMMIT_MSG:  ${{ github.event.head_commit.message }}
-        run: |
-          gh pr comment "$PR_NUMBER" --repo "$REPO" --body \
-            "🤖 **Jules pushed a fix** — \`${COMMIT_SHA:0:7}\`
+            --- GREPTILE REVIEW ---
 
-          > $COMMIT_MSG
-
-          Greptile will re-review this commit automatically. If the score is still below 4/5, Jules will be tagged again."
+            ${{ github.event.review.body }}
