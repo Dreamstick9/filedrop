@@ -1,6 +1,6 @@
 {
   "name": "@dreamstick/filedrop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Instantly host a file on a local web server with QR code for mobile transfer",
   "main": "src/index.js",
   "bin": {
