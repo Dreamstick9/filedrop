@@ -236,6 +236,10 @@ async function createServer({
         const archive = new archiver.ZipArchive({ zlib: { level: 1 } });
 
         archive.on('error', function(err) {
+          if (activeDevices.has(deviceId)) {
+            activeDevices.delete(deviceId);
+            if (activeDevices.size === 0 && onTransferIdle) onTransferIdle();
+          }
           onTransferError(err);
         });
 
