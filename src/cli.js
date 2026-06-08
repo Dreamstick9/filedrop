@@ -121,6 +121,11 @@ function parseArgs(argv) {
     pin = Math.floor(1000 + Math.random() * 9000).toString();
   } else {
     pin = pin.toString();
+    if (!/^\d{4}$/.test(pin)) {
+       console.error('filedrop: error: --pin must be exactly 4 digits to match the login form');
+       console.error("Run 'filedrop --help' for usage.");
+       process.exit(1);
+    }
   }
 
   let port = null;
