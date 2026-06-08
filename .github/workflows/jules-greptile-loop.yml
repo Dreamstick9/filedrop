@@ -17,44 +17,68 @@ jobs:
       pull-requests: write
 
     steps:
-      - name: Parse Greptile confidence score
+      # Greptile triggers the pull_request_review event before fully
+      # populating the review body. Wait for it to finish writing.
+      - name: Wait for Greptile review to populate
+        run: sleep 20
+
+      # Fetch the review body via the GitHub API instead of relying
+      # on the (often empty) event payload.
+      - name: Fetch and parse Greptile review
         id: parse
         env:
-          REVIEW_BODY: ${{ github.event.review.body }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          REVIEW_ID: ${{ github.event.review.id }}
         run: |
-          SCORE=$(echo "$REVIEW_BODY" \
-            | grep -oP '(?i)confidence score:\s*\K[0-9]+(?=\s*/\s*5)' \
+          # 1. Try the specific review that triggered this event
+          BODY=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/reviews/${REVIEW_ID}" \
+            --jq '.body' 2>/dev/null || echo "")
+
+          # 2. Fallback: grab the latest Greptile issue comment
+          if [ -z "$BODY" ]; then
+            echo "Review body empty, trying issue comments..."
+            BODY=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+              --jq '[.[] | select(.user.login == "greptile-apps" or .user.login == "greptile-apps[bot]")] | last | .body' \
+              2>/dev/null || echo "")
+          fi
+
+          echo "Body length: ${#BODY} chars"
+
+          # Parse the Confidence Score (e.g. "Confidence Score: 2/5")
+          SCORE=$(echo "$BODY" \
+            | grep -oP '(?i)confidence\s+score[:\s]*\K[0-9]+(?=\s*/\s*5)' \
             | head -1)
 
           echo "Parsed score: ${SCORE:-not found}"
           echo "score=${SCORE}" >> "$GITHUB_OUTPUT"
 
-          # Set a clean boolean so the next step's `if:` is unambiguous
           if [ -n "$SCORE" ] && [ "$SCORE" -lt 4 ]; then
             echo "should_invoke=true"  >> "$GITHUB_OUTPUT"
+            echo "✅ Score ${SCORE}/5 is below threshold — invoking Jules"
           else
             echo "should_invoke=false" >> "$GITHUB_OUTPUT"
+            echo "ℹ️  Score ${SCORE:-unknown}/5 meets threshold — skipping Jules"
           fi
 
       - name: Invoke Jules to fix the issues
         if: steps.parse.outputs.should_invoke == 'true'
         uses: google-labs-code/jules-invoke@v1.0.0
         with:
-          jules_api_key:      ${{ secrets.JULES_API_KEY }}
-          # Tell Jules to work on the PR branch, not main
-          starting_branch:    ${{ github.event.pull_request.head.ref }}
+          jules_api_key:       ${{ secrets.JULES_API_KEY }}
+          starting_branch:     ${{ github.event.pull_request.head.ref }}
           include_last_commit: true
           prompt: |
-            A Greptile automated code review gave this PR a confidence score of ${{ steps.parse.outputs.score }}/5, which is below the required threshold of 4/5.
+            A Greptile automated code review gave PR #${{ github.event.pull_request.number }} a confidence score of ${{ steps.parse.outputs.score }}/5, which is below the required threshold of 4/5.
 
-            Your job is to read the review findings below and fix every issue that is flagged as P0 or P1. Do not change anything unrelated to the review findings.
+            Go to this pull request and read all review comments from the greptile-apps bot:
+            ${{ github.event.pull_request.html_url }}
+
+            Fix every issue that Greptile flagged. Do not change anything unrelated to the review findings.
 
             Rules:
             - Fix only what Greptile flagged — no scope creep
             - All existing tests must still pass after your changes
             - Keep each change minimal and surgical
             - Do not open a new PR; push your fix commits directly to the current branch: ${{ github.event.pull_request.head.ref }}
-
-            --- GREPTILE REVIEW ---
-
-            ${{ github.event.review.body }}
