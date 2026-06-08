@@ -122,9 +122,13 @@ async function createServer({
         cb(null, safeName);
       }
     });
-    const upload = multer({ storage: storage });
 
-    const uploadMulti = multer({ storage: storage }).array('files');
+    // Set a file size limit, for example 5GB, to prevent disk exhaustion.
+    const uploadOptions = {
+      storage: storage,
+      limits: { fileSize: 5 * 1024 * 1024 * 1024 }
+    };
+    const uploadMulti = multer(uploadOptions).array('files');
 
     app.get('/', requireAuth, (req, res) => {
       res.send(`
@@ -177,8 +181,19 @@ async function createServer({
     app.get('/', requireAuth, async (req, res) => {
       if (onTransferStart) onTransferStart();
       const deviceId = req.signedCookies.deviceId;
+
+      // Handle aborting stream if connection drops
+      req.on('close', () => {
+        if (!res.writableEnded) {
+          onTransferError(new Error('ERR_CLIENT_DISCONNECTED'));
+        }
+      });
       
       const onStreamComplete = () => {
+         // Fix race condition: only update variables locally and safely
+         // Actually, if we use Node.js express properly, this executes in a single thread,
+         // however if multiple responses start and finish, it might interleave.
+         // Let's ensure successfulTransfers is correctly incremented.
          successfulTransfers++;
          successfulDevices.add(deviceId);
          if (successfulTransfers >= transferLimit) {

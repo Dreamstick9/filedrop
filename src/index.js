@@ -122,6 +122,11 @@ async function main() {
     },
     onTransferError: (err) => {
       isTransferring = false;
+      // In receive mode, we do not reject and terminate unless there's an actual critical error
+      if (config.receive && err.message && err.message.includes('ERR_CLIENT_DISCONNECTED')) {
+          console.error(`\nTransfer error: ${err.message}`);
+          return;
+      }
       transferErrorReject(err);
     }
   });
