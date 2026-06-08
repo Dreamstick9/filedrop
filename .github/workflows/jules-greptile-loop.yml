@@ -1,0 +1,22 @@
+name: Jules Auto-Fix Loop
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  jules-fix:
+    if: ${{ github.event.issue.pull_request && contains(github.event.comment.body, '@jules') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          # Required to allow Jules to push back to the branch
+          fetch-depth: 0
+          
+      - name: Invoke Jules Agent
+        uses: google-labs-code/jules-invoke@v1
+        with:
+          jules_api_key: ${{ secrets.JULES_API_KEY }}
+          prompt: "Read the latest review comments from Greptile on this PR. Implement the requested fixes, ensure tests pass, and push your commits back to this branch."
