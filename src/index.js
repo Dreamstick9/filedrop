@@ -38,7 +38,7 @@ const qr = require('./qr');
 
 async function main() {
   // 1. Parse and validate arguments
-  const config = parseArgs(process.argv);
+  const config = await parseArgs(process.argv);
   
   // 2. Resolve absolute file path
   // Handled inside parseArgs, which returns an absolute config.filePath
@@ -115,6 +115,10 @@ async function main() {
       isTransferring = true;
       clearTimeout(timeoutHandle); // reset/cancel connection timeout
       qr.updateStatus('transferring', { color: config.color });
+    },
+    onTransferIdle: () => {
+      isTransferring = false;
+      qr.updateStatus('idle', { color: config.color });
     },
     onTransferComplete: () => {
       isTransferring = false;

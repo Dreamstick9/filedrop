@@ -235,6 +235,10 @@ function updateStatus(status, options = {}) {
     prefix = color ? `  │  ✅  ` : `  |  [Done]  `;
     msg = `Done. Goodbye.`;
     msgLen = color ? 6 + msg.length : 10 + msg.length;
+  } else if (status === 'idle') {
+    prefix = color ? `  │  ⏳  ` : `  |  [Wait]  `;
+    msg = `Waiting for connection...`;
+    msgLen = color ? 6 + msg.length : 10 + msg.length;
   } else {
     return;
   }
