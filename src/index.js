@@ -100,12 +100,16 @@ async function main() {
   let isTransferring = false;
   let timeoutHandle;
 
-  const httpApp = server.createServer({
+  const httpApp = await server.createServer({
     filePath: config.filePath,
     port: port,
     options: {
       timeout: config.timeout,
-      verbose: config.verbose
+      verbose: config.verbose,
+      isDir: config.isDir,
+      receive: config.receive,
+      limit: config.limit,
+      pin: config.pin
     },
     onTransferStart: () => {
       isTransferring = true;
@@ -122,23 +126,25 @@ async function main() {
     }
   });
 
+  // 8. Start HTTP server (begin accepting connections)
+  if (httpApp.start) {
+    await httpApp.start();
+  }
+
   // 7. Render and print QR code + metadata box
   if (config.qr) {
     const qrString = qr.renderQR(url, { compact: config.qrCompact, noQr: false, color: config.color });
     console.log(qrString);
     if (!config.qrCompact) {
-      console.log(qr.renderMetadataBox(filename, config.fileSize + ' bytes', url, config.mdns ? mdnsName : null, { color: config.color }));
+      const sizeStr = config.isDir ? 'Directory' : config.fileSize + ' bytes';
+      console.log(qr.renderMetadataBox(filename, sizeStr, url, config.mdns ? mdnsName : null, { color: config.color, pin: config.pin, receive: config.receive, limit: config.limit }));
     }
   } else {
     console.log(`URL: ${url}`);
+    console.log(`PIN: ${config.pin}`);
     if (config.mdns) {
       console.log(`mDNS: ${mdnsName}.local`);
     }
-  }
-
-  // 8. Start HTTP server (begin accepting connections)
-  if (httpApp.start) {
-    await httpApp.start();
   }
 
   // Signal Handling
