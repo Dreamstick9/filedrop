@@ -162,6 +162,7 @@ async function main() {
     if (isShuttingDown) return;
     
     if (isTransferring) {
+      isShuttingDown = true;
       console.log('\nTransfer in progress — waiting for completion...');
       // Wait up to 10 seconds before force-exiting
       setTimeout(() => {
