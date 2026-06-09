@@ -1,31 +1,32 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const mime = require('mime');
 const crypto = require('crypto');
 
-/**
- * Initializes and starts the ephemeral HTTP server for filedrop.
- * 
- * @param {Object} params 
- * @param {string} params.filePath - Absolute path to the file.
- * @param {number} params.port - The port to bind to.
- * @param {Object} params.options - Server options (e.g. timeout, version, onShutdown).
- * @param {Function} params.onTransferComplete - Callback when transfer completes successfully.
- * @param {Function} params.onTransferError - Callback when a fatal error occurs.
- * @returns {Promise<{ server: http.Server, shutdown: () => Promise<void> }>}
- */
+function escapeHtml(unsafe) {
+    return unsafe
+         .replace(/&/g, "&amp;")
+         .replace(/</g, "&lt;")
+         .replace(/>/g, "&gt;")
+         .replace(/"/g, "&quot;")
+         .replace(/'/g, "&#039;");
+}
+
 async function createServer({
   filePath,
   port,
   options = {},
+  onTransferStart,
   onTransferComplete,
   onTransferError
 }) {
   const fileName = path.basename(filePath);
-  const transferId = crypto.randomUUID();
+  const transferId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
   
-  // file should be pre-validated, but we stat it to get the size
+  // Generate E2EE Key
+  const aesKey = crypto.randomBytes(32);
+  const keyHex = aesKey.toString('hex');
+  
   let fileStat;
   try {
     fileStat = await fs.promises.stat(filePath);
@@ -34,10 +35,9 @@ async function createServer({
     throw err;
   }
 
-  // Infer content type
-  const contentType = mime.getType(filePath) || 'application/octet-stream';
+  // Use application/octet-stream to force download
+  const contentType = 'application/octet-stream';
   
-  // Encode filename for Content-Disposition (RFC 5987)
   const encodedFileName = encodeURIComponent(fileName)
     .replace(/['()]/g, escape)
     .replace(/\*/g, '%2A');
@@ -49,9 +49,104 @@ async function createServer({
   let hasTransferred = false;
   const sockets = new Set();
 
+  const htmlPayload = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Download ${escapeHtml(fileName)}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #000; color: #fff; margin: 0; }
+    .container { text-align: center; padding: 20px; border-radius: 12px; background: #111; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+    h1 { font-size: 1.5rem; margin-bottom: 8px; word-break: break-all; }
+    p { color: #888; font-size: 0.9rem; margin-bottom: 24px; }
+    .progress-bar { width: 100%; max-width: 300px; height: 8px; background: #333; border-radius: 4px; margin: 0 auto; overflow: hidden; }
+    .progress-fill { height: 100%; background: #0A84FF; width: 0%; transition: width 0.2s; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>${escapeHtml(fileName)}</h1>
+    <p id="status">Decrypting & Downloading...</p>
+    <div class="progress-bar"><div class="progress-fill" id="progress"></div></div>
+  </div>
+  <script>
+    (async function() {
+      const statusEl = document.getElementById('status');
+      const progressEl = document.getElementById('progress');
+      try {
+        const hash = window.location.hash.slice(1);
+        if (!hash) throw new Error("Missing decryption key in URL");
+        
+        const keyBytes = new Uint8Array(hash.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+        const key = await crypto.subtle.importKey(
+          "raw", keyBytes, { name: "AES-GCM" }, false, ["decrypt"]
+        );
+
+        statusEl.innerText = "Downloading encrypted file...";
+        const response = await fetch('/download');
+        if (!response.ok) throw new Error("File not found or already transferred.");
+        
+        const encryptedBuffer = await response.arrayBuffer();
+        statusEl.innerText = "Decrypting locally...";
+        
+        const iv = encryptedBuffer.slice(0, 12);
+        const data = encryptedBuffer.slice(12);
+        
+        const decryptedBuffer = await crypto.subtle.decrypt(
+          { name: "AES-GCM", iv: new Uint8Array(iv) },
+          key,
+          data
+        );
+        
+        statusEl.innerText = "Saving file...";
+        progressEl.style.width = "100%";
+        
+        const blob = new Blob([decryptedBuffer], { type: "application/octet-stream" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = "${escapeHtml(fileName)}";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        statusEl.innerText = "Transfer Complete! You can close this page.";
+      } catch (err) {
+        statusEl.innerText = "Error: " + err.message;
+        statusEl.style.color = "#FF453A";
+        progressEl.style.background = "#FF453A";
+        console.error(err);
+      }
+    })();
+  </script>
+</body>
+</html>`;
+
   const server = http.createServer((req, res) => {
-    // Reject subsequent or concurrent GET requests
-    if (hasTransferred && req.method === 'GET') {
+    const { method, url } = req;
+    
+    // Serve the HTML Decryptor Interface
+    if (url === '/' || url === \`/\${encodeURI(fileName)}\`) {
+      if (hasTransferred) {
+        res.writeHead(410, { 'Content-Type': 'text/plain' });
+        res.end('This file has already been transferred.');
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(htmlPayload);
+      return;
+    }
+
+    // Reject unknown paths
+    if (url !== '/download') {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Not Found');
+      return;
+    }
+
+    if (hasTransferred && method === 'GET') {
       res.writeHead(410, {
         'Content-Type': 'text/plain',
         'X-Filedrop-Version': version,
@@ -63,36 +158,25 @@ async function createServer({
       return;
     }
 
-    const { method, url } = req;
-    
-    // Only accept / and /<filename>
-    const validPaths = ['/', `/${encodeURI(fileName)}`];
-    if (!validPaths.includes(url)) {
-      res.writeHead(404, { 'Content-Type': 'text/plain' });
-      res.end('Not Found');
-      return;
-    }
-
-    // Only allow GET and HEAD
     if (method !== 'GET' && method !== 'HEAD') {
       res.writeHead(405, { 'Allow': 'GET, HEAD', 'Content-Type': 'text/plain' });
       res.end('Method Not Allowed');
       return;
     }
 
-    // Reject partial requests
     if (req.headers.range) {
-      res.writeHead(416, {
-        'Content-Range': `bytes */${fileStat.size}`,
-        'Content-Type': 'text/plain'
-      });
+      res.writeHead(416, { 'Content-Type': 'text/plain' });
       res.end('Range Not Satisfiable');
       return;
     }
 
-    // Set standard response headers
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Length', fileStat.size);
+    // It's the /download endpoint, encrypt and stream
+    if (typeof onTransferStart === 'function' && !hasTransferred) {
+      onTransferStart();
+    }
+    hasTransferred = true;
+
+    res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader('Content-Disposition', contentDisposition);
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Connection', 'close');
@@ -104,13 +188,9 @@ async function createServer({
       return;
     }
 
-    // This is the first GET request
-    hasTransferred = true;
-
     let responseFinished = false;
     let transferConcluded = false;
 
-    // Start transfer timeout
     const transferTimeout = setTimeout(() => {
       if (!transferConcluded) {
         transferConcluded = true;
@@ -136,7 +216,6 @@ async function createServer({
       }
     });
 
-    // Stream the file
     let fileStream;
     try {
       fileStream = fs.createReadStream(filePath);
@@ -149,8 +228,6 @@ async function createServer({
       if (transferConcluded) return;
       transferConcluded = true;
       clearTimeout(transferTimeout);
-      
-      // Abort response
       req.socket.destroy();
       
       if (err.code === 'EMFILE') {
@@ -160,50 +237,49 @@ async function createServer({
       }
     });
 
-    fileStream.pipe(res);
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', aesKey, iv);
+    
+    // Write IV first
+    res.write(iv);
+    
+    fileStream.on('data', (chunk) => {
+      const encrypted = cipher.update(chunk);
+      if (encrypted.length > 0) res.write(encrypted);
+    });
+
+    fileStream.on('end', () => {
+      const finalBuffer = cipher.final();
+      if (finalBuffer.length > 0) res.write(finalBuffer);
+      const authTag = cipher.getAuthTag();
+      res.end(authTag);
+    });
   });
 
-  // Track all sockets to destroy them on shutdown
   server.on('connection', (socket) => {
     sockets.add(socket);
     socket.once('close', () => sockets.delete(socket));
   });
 
-  /**
-   * Graceful shutdown sequence
-   * @returns {Promise<void>}
-   */
   const shutdown = () => {
     return new Promise((resolve) => {
       let resolved = false;
-
       const finish = () => {
         if (resolved) return;
         resolved = true;
         resolve();
       };
-
-      // 5. Times out after 3 seconds and force-resolves regardless
       const forceTimeout = setTimeout(finish, 3000);
-
-      // 3. Unregisters the mDNS service (via injected callback)
+      
       if (typeof options.onShutdown === 'function') {
-        try {
-          options.onShutdown();
-        } catch (err) {
-          if (options.verbose) {
-            console.error('mDNS unregister error:', err);
-          }
-        }
+        try { options.onShutdown(); } catch (err) { }
       }
 
-      // 1. Calls server.close() to stop accepting new connections
       server.close(() => {
         clearTimeout(forceTimeout);
         finish();
       });
 
-      // 2. Destroys any open sockets
       for (const socket of sockets) {
         socket.destroy();
       }
@@ -211,12 +287,11 @@ async function createServer({
   };
 
   return new Promise((resolve, reject) => {
-    // Listen to error only for binding issues (e.g. EADDRINUSE)
     server.once('error', reject);
-    
     server.listen(port, () => {
       server.removeListener('error', reject);
-      resolve({ server, shutdown });
+      // Expose keyHex here
+      resolve({ server, shutdown, keyHex });
     });
   });
 }

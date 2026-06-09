@@ -66,7 +66,9 @@ async function main() {
     process.exit(3);
   }
 
-  const url = `http://${ip}:${port}/`;
+  // url and filename will be constructed after server creation
+  // so we can get the encryption key and attach it to the URL.
+
   const filename = path.basename(config.filePath);
 
   // 5. Initialize mDNS module (non-blocking)
@@ -84,7 +86,7 @@ async function main() {
     }).catch(err => {
       // fire and forget with error callback
       if (config.verbose) {
-        console.error(`mDNS error: ${err.message}`);
+        console.error(\`mDNS error: \${err.message}\`);
       }
     });
   }
@@ -100,7 +102,7 @@ async function main() {
   let isTransferring = false;
   let timeoutHandle;
 
-  const httpApp = server.createServer({
+  const { server: httpAppServer, shutdown: httpAppShutdown, keyHex } = await server.createServer({
     filePath: config.filePath,
     port: port,
     options: {
@@ -122,6 +124,8 @@ async function main() {
     }
   });
 
+  const url = `http://${ip}:${port}/#${keyHex}`;
+
   // 7. Render and print QR code + metadata box
   if (config.qr) {
     const qrString = qr.renderQR(url, { compact: config.qrCompact, noQr: false, color: config.color });
@@ -130,15 +134,10 @@ async function main() {
       console.log(qr.renderMetadataBox(filename, config.fileSize + ' bytes', url, config.mdns ? mdnsName : null, { color: config.color }));
     }
   } else {
-    console.log(`URL: ${url}`);
+    console.log(\`URL: \${url}\`);
     if (config.mdns) {
-      console.log(`mDNS: ${mdnsName}.local`);
+      console.log(\`mDNS: \${mdnsName}.local\`);
     }
-  }
-
-  // 8. Start HTTP server (begin accepting connections)
-  if (httpApp.start) {
-    await httpApp.start();
   }
 
   // Signal Handling
@@ -162,7 +161,7 @@ async function main() {
     
     // Call server.shutdown() and mdns.deregister() in parallel
     const shutdownPromise = Promise.all([
-      httpApp.shutdown ? httpApp.shutdown().catch(() => {}) : Promise.resolve(),
+      httpAppShutdown ? httpAppShutdown().catch(() => {}) : Promise.resolve(),
       config.mdns && mdns.teardown ? mdns.teardown().catch(() => {}) : Promise.resolve()
     ]);
     
@@ -181,7 +180,7 @@ async function main() {
     timeoutHandle = setTimeout(async () => {
       console.error(`\nTransfer timed out after ${config.timeout} seconds.`);
       if (config.mdns && mdns.teardown) await mdns.teardown().catch(() => {});
-      if (httpApp.shutdown) await httpApp.shutdown().catch(() => {});
+      if (httpAppShutdown) await httpAppShutdown().catch(() => {});
       process.exit(5);
     }, config.timeout * 1000);
   }
@@ -200,8 +199,8 @@ async function main() {
     }
     
     // 13. Shutdown HTTP server
-    if (httpApp.shutdown) {
-      await httpApp.shutdown().catch(() => {});
+    if (httpAppShutdown) {
+      await httpAppShutdown().catch(() => {});
     }
     
     // 14. Exit process with code 0
@@ -214,8 +213,8 @@ async function main() {
     if (config.mdns && mdns.teardown) {
       await mdns.teardown().catch(() => {});
     }
-    if (httpApp.shutdown) {
-      await httpApp.shutdown().catch(() => {});
+    if (httpAppShutdown) {
+      await httpAppShutdown().catch(() => {});
     }
     
     if (err.message && err.message.includes('ERR_CLIENT_DISCONNECTED')) {
