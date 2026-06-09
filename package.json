@@ -40,8 +40,8 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "eslint": "^8.57.1",
-    "globals": "^17.6.0",
+    "eslint": "^9.39.4",
+    "globals": "^15.15.0",
     "pkg": "^5.8.1"
   },
   "directories": {
