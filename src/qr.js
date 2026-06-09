@@ -132,14 +132,19 @@ let lastBoxWidth = 43;
  * @returns {string} The formatted metadata box.
  */
 function renderMetadataBox(filename, sizeHuman, url, mdnsName, options = {}) {
-  const { color = supportsColor() } = options;
+  const { color = supportsColor(), pin, receive, limit } = options;
+
+  const modeText = receive ? `(Receive Mode) limit: ${limit}` : `limit: ${limit}`;
+  const pinText = pin ? `PIN: ${pin}` : '';
   
   const l1Len = 6 + filename.length + 2 + sizeHuman.length;
   const l2Len = 6 + url.length;
   const l3Len = mdnsName ? 6 + mdnsName.length + 6 : 0; // 6 for ".local"
   const l4Len = 6 + 25; // "Waiting for connection..."
+  const l5Len = 6 + modeText.length;
+  const l6Len = pinText ? 6 + pinText.length : 0;
   
-  const boxInnerWidth = Math.max(43, l1Len, l2Len, l3Len, l4Len);
+  const boxInnerWidth = Math.max(43, l1Len, l2Len, l3Len, l4Len, l5Len, l6Len);
   lastBoxWidth = boxInnerWidth;
   
   let output = '';
@@ -164,6 +169,16 @@ function renderMetadataBox(filename, sizeHuman, url, mdnsName, options = {}) {
     const padding4 = boxInnerWidth - l4Len;
     output += `  │  ⏳  Waiting for connection...${' '.repeat(Math.max(0, padding4))}│\n`;
     
+    // Line 5
+    const padding5 = boxInnerWidth - l5Len;
+    output += `  │  🔄  ${modeText}${' '.repeat(Math.max(0, padding5))}│\n`;
+
+    // Line 6
+    if (pinText) {
+      const padding6 = boxInnerWidth - l6Len;
+      output += `  │  🔑  ${pinText}${' '.repeat(Math.max(0, padding6))}│\n`;
+    }
+
     output += `  └${'─'.repeat(boxInnerWidth)}┘\n`;
   } else {
     output += `  +${'-'.repeat(boxInnerWidth)}+\n`;
@@ -187,6 +202,16 @@ function renderMetadataBox(filename, sizeHuman, url, mdnsName, options = {}) {
     const padding4 = boxInnerWidth - pl4Len;
     output += `  |  [Wait]  Waiting for connection...${' '.repeat(Math.max(0, padding4))}|\n`;
     
+    const pl5Len = 10 + modeText.length;
+    const padding5 = boxInnerWidth - pl5Len;
+    output += `  |  [Mode]  ${modeText}${' '.repeat(Math.max(0, padding5))}|\n`;
+
+    if (pinText) {
+      const pl6Len = 10 + pinText.length;
+      const padding6 = boxInnerWidth - pl6Len;
+      output += `  |  [PIN]   ${pinText}${' '.repeat(Math.max(0, padding6))}|\n`;
+    }
+
     output += `  +${'-'.repeat(boxInnerWidth)}+\n`;
   }
   
@@ -209,6 +234,10 @@ function updateStatus(status, options = {}) {
   } else if (status === 'done') {
     prefix = color ? `  │  ✅  ` : `  |  [Done]  `;
     msg = `Done. Goodbye.`;
+    msgLen = color ? 6 + msg.length : 10 + msg.length;
+  } else if (status === 'idle') {
+    prefix = color ? `  │  ⏳  ` : `  |  [Wait]  `;
+    msg = `Waiting for connection...`;
     msgLen = color ? 6 + msg.length : 10 + msg.length;
   } else {
     return;

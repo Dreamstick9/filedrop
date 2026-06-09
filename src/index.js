@@ -38,7 +38,7 @@ const qr = require('./qr');
 
 async function main() {
   // 1. Parse and validate arguments
-  const config = parseArgs(process.argv);
+  const config = await parseArgs(process.argv);
   
   // 2. Resolve absolute file path
   // Handled inside parseArgs, which returns an absolute config.filePath
@@ -100,17 +100,25 @@ async function main() {
   let isTransferring = false;
   let timeoutHandle;
 
-  const httpApp = server.createServer({
+  const httpApp = await server.createServer({
     filePath: config.filePath,
     port: port,
     options: {
       timeout: config.timeout,
-      verbose: config.verbose
+      verbose: config.verbose,
+      isDir: config.isDir,
+      receive: config.receive,
+      limit: config.limit,
+      pin: config.pin
     },
     onTransferStart: () => {
       isTransferring = true;
       clearTimeout(timeoutHandle); // reset/cancel connection timeout
       qr.updateStatus('transferring', { color: config.color });
+    },
+    onTransferIdle: () => {
+      isTransferring = false;
+      qr.updateStatus('idle', { color: config.color });
     },
     onTransferComplete: () => {
       isTransferring = false;
@@ -118,27 +126,34 @@ async function main() {
     },
     onTransferError: (err) => {
       isTransferring = false;
+      // In receive mode, we do not reject and terminate unless there's an actual critical error
+      if (config.receive && err.message && err.message.includes('ERR_CLIENT_DISCONNECTED')) {
+          console.error(`\nTransfer error: ${err.message}`);
+          return;
+      }
       transferErrorReject(err);
     }
   });
+
+  // 8. Start HTTP server (begin accepting connections)
+  if (httpApp.start) {
+    await httpApp.start();
+  }
 
   // 7. Render and print QR code + metadata box
   if (config.qr) {
     const qrString = qr.renderQR(url, { compact: config.qrCompact, noQr: false, color: config.color });
     console.log(qrString);
     if (!config.qrCompact) {
-      console.log(qr.renderMetadataBox(filename, config.fileSize + ' bytes', url, config.mdns ? mdnsName : null, { color: config.color }));
+      const sizeStr = config.isDir ? 'Directory' : config.fileSize + ' bytes';
+      console.log(qr.renderMetadataBox(filename, sizeStr, url, config.mdns ? mdnsName : null, { color: config.color, pin: config.pin, receive: config.receive, limit: config.limit }));
     }
   } else {
     console.log(`URL: ${url}`);
+    console.log(`PIN: ${config.pin}`);
     if (config.mdns) {
       console.log(`mDNS: ${mdnsName}.local`);
     }
-  }
-
-  // 8. Start HTTP server (begin accepting connections)
-  if (httpApp.start) {
-    await httpApp.start();
   }
 
   // Signal Handling
@@ -147,6 +162,7 @@ async function main() {
     if (isShuttingDown) return;
     
     if (isTransferring) {
+      isShuttingDown = true;
       console.log('\nTransfer in progress — waiting for completion...');
       // Wait up to 10 seconds before force-exiting
       setTimeout(() => {

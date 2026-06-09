@@ -3,176 +3,311 @@ const fs = require('fs');
 const path = require('path');
 const mime = require('mime');
 const crypto = require('crypto');
+const express = require('express');
+const cookieParser = require('cookie-parser');
+const multer = require('multer');
+const archiver = require('archiver');
+const rateLimit = require('express-rate-limit');
 
 /**
  * Initializes and starts the ephemeral HTTP server for filedrop.
  * 
  * @param {Object} params 
- * @param {string} params.filePath - Absolute path to the file.
+ * @param {string} params.filePath - Absolute path to the file or directory.
  * @param {number} params.port - The port to bind to.
- * @param {Object} params.options - Server options (e.g. timeout, version, onShutdown).
+ * @param {Object} params.options - Server options (e.g. timeout, version, isDir, receive, limit, pin).
+ * @param {Function} params.onTransferStart - Callback when transfer begins.
  * @param {Function} params.onTransferComplete - Callback when transfer completes successfully.
  * @param {Function} params.onTransferError - Callback when a fatal error occurs.
- * @returns {Promise<{ server: http.Server, shutdown: () => Promise<void> }>}
+ * @returns {Promise<{ server: http.Server, shutdown: () => Promise<void>, start: () => Promise<void> }>}
  */
 async function createServer({
   filePath,
   port,
   options = {},
+  onTransferStart,
+  onTransferIdle,
   onTransferComplete,
   onTransferError
 }) {
-  const fileName = path.basename(filePath);
-  const transferId = crypto.randomUUID();
+  const app = express();
   
-  // file should be pre-validated, but we stat it to get the size
-  let fileStat;
-  try {
-    fileStat = await fs.promises.stat(filePath);
-  } catch (err) {
-    onTransferError(err);
-    throw err;
-  }
-
-  // Infer content type
-  const contentType = mime.getType(filePath) || 'application/octet-stream';
-  
-  // Encode filename for Content-Disposition (RFC 5987)
-  const encodedFileName = encodeURIComponent(fileName)
-    .replace(/['()]/g, escape)
-    .replace(/\*/g, '%2A');
-  const contentDisposition = `attachment; filename="${fileName.replace(/"/g, '\\"')}"; filename*=UTF-8''${encodedFileName}`;
-
   const version = options.version || '1.0.0';
-  const timeoutMs = options.timeout ? options.timeout * 1000 : 60000;
+  const cookieSecret = crypto.randomBytes(32).toString('hex');
   
-  let hasTransferred = false;
-  const sockets = new Set();
+  app.use(express.urlencoded({ extended: true }));
+  app.use(cookieParser(cookieSecret));
 
-  const server = http.createServer((req, res) => {
-    // Reject subsequent or concurrent GET requests
-    if (hasTransferred && req.method === 'GET') {
-      res.writeHead(410, {
-        'Content-Type': 'text/plain',
-        'X-Filedrop-Version': version,
-        'X-Transfer-ID': transferId
-      });
-      res.end('This file has already been transferred.', () => {
-        req.socket.destroy();
-      });
-      return;
-    }
+  const fileName = path.basename(filePath);
+  const isDir = options.isDir;
+  const receiveMode = options.receive;
+  const transferLimit = options.limit || 1;
+  const pin = options.pin;
 
-    const { method, url } = req;
-    
-    // Only accept / and /<filename>
-    const validPaths = ['/', `/${encodeURI(fileName)}`];
-    if (!validPaths.includes(url)) {
-      res.writeHead(404, { 'Content-Type': 'text/plain' });
-      res.end('Not Found');
-      return;
-    }
+  let successfulTransfers = 0;
+  const activeDevices = new Set();
+  const successfulDevices = new Set();
 
-    // Only allow GET and HEAD
-    if (method !== 'GET' && method !== 'HEAD') {
-      res.writeHead(405, { 'Allow': 'GET, HEAD', 'Content-Type': 'text/plain' });
-      res.end('Method Not Allowed');
-      return;
-    }
-
-    // Reject partial requests
-    if (req.headers.range) {
-      res.writeHead(416, {
-        'Content-Range': `bytes */${fileStat.size}`,
-        'Content-Type': 'text/plain'
-      });
-      res.end('Range Not Satisfiable');
-      return;
-    }
-
-    // Set standard response headers
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Length', fileStat.size);
-    res.setHeader('Content-Disposition', contentDisposition);
-    res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('Connection', 'close');
-    res.setHeader('X-Filedrop-Version', version);
-    res.setHeader('X-Transfer-ID', transferId);
-
-    if (method === 'HEAD') {
-      res.end();
-      return;
-    }
-
-    // This is the first GET request
-    hasTransferred = true;
-
-    let responseFinished = false;
-    let transferConcluded = false;
-
-    // Start transfer timeout
-    const transferTimeout = setTimeout(() => {
-      if (!transferConcluded) {
-        transferConcluded = true;
-        req.socket.destroy();
-        onTransferError(new Error('ERR_TRANSFER_TIMEOUT'));
-      }
-    }, timeoutMs);
-
-    res.on('finish', () => {
-      responseFinished = true;
-    });
-
-    req.socket.on('close', () => {
-      if (transferConcluded) return;
-      transferConcluded = true;
-      clearTimeout(transferTimeout);
-      
-      if (responseFinished) {
-        onTransferComplete();
-      } else {
-        if (fileStream) fileStream.destroy();
-        onTransferError(new Error('ERR_CLIENT_DISCONNECTED'));
-      }
-    });
-
-    // Stream the file
-    let fileStream;
-    try {
-      fileStream = fs.createReadStream(filePath);
-    } catch (err) {
-      onTransferError(err);
-      return;
-    }
-
-    fileStream.on('error', (err) => {
-      if (transferConcluded) return;
-      transferConcluded = true;
-      clearTimeout(transferTimeout);
-      
-      // Abort response
-      req.socket.destroy();
-      
-      if (err.code === 'EMFILE') {
-        onTransferError(new Error('ERR_TOO_MANY_OPEN_FILES'));
-      } else {
-        onTransferError(err);
-      }
-    });
-
-    fileStream.pipe(res);
+  const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 20, // limit each IP to 20 requests per windowMs
+    message: "Too many login attempts, please try again later"
   });
 
-  // Track all sockets to destroy them on shutdown
+  // Authentication Middleware
+  const requireAuth = (req, res, next) => {
+    // Determine the total number of transfers consumed (completed + actively in progress)
+    const transfersConsumed = successfulTransfers + activeDevices.size;
+
+    if (!receiveMode && transfersConsumed >= transferLimit && !successfulDevices.has(req.signedCookies.deviceId) && !activeDevices.has(req.signedCookies.deviceId)) {
+      return res.status(410).send('This transfer is no longer available.');
+    }
+
+    if (req.signedCookies.auth === 'true' && req.signedCookies.deviceId) {
+      if (!receiveMode && successfulDevices.has(req.signedCookies.deviceId) && req.path === '/') {
+        return res.status(410).send('You have already completed this transfer.');
+      }
+      return next();
+    }
+    res.redirect('/login');
+  };
+
+  // Login Page
+  app.get('/login', (req, res) => {
+    const transfersConsumed = successfulTransfers + activeDevices.size;
+    if (!receiveMode && transfersConsumed >= transferLimit) {
+      return res.status(410).send('This transfer is no longer available.');
+    }
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #121212; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+          .container { background-color: #1e1e1e; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); text-align: center; }
+          input[type="text"] { width: 100%; padding: 15px; margin: 20px 0; border-radius: 8px; border: none; background-color: #2d2d2d; color: white; font-size: 24px; text-align: center; letter-spacing: 5px; box-sizing: border-box; }
+          button { background-color: #007aff; color: white; border: none; padding: 15px 30px; border-radius: 8px; font-size: 18px; cursor: pointer; width: 100%; }
+          button:hover { background-color: #0056b3; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <h2>Enter PIN</h2>
+          <form method="POST" action="/login">
+            <input type="text" name="pin" pattern="\\d*" maxlength="4" required autofocus>
+            <button type="submit">Unlock</button>
+          </form>
+        </div>
+      </body>
+      </html>
+    `);
+  });
+
+  // Login Action
+  app.post('/login', limiter, (req, res) => {
+    const submittedPin = req.body.pin || '';
+    const actualPin = pin || '';
+
+    const submittedBuffer = Buffer.from(String(submittedPin));
+    const actualBuffer = Buffer.from(String(actualPin));
+
+    let isMatch = false;
+    if (submittedBuffer.length === actualBuffer.length) {
+      isMatch = crypto.timingSafeEqual(submittedBuffer, actualBuffer);
+    }
+
+    if (isMatch) {
+      const deviceId = crypto.randomUUID();
+      res.cookie('auth', 'true', { signed: true, httpOnly: true, maxAge: 3600000 });
+      res.cookie('deviceId', deviceId, { signed: true, httpOnly: true, maxAge: 3600000 });
+      res.redirect('/');
+    } else {
+      res.status(401).send('Invalid PIN. <a href="/login">Try again</a>');
+    }
+  });
+
+  if (receiveMode) {
+    // Receive Mode Setup
+    const storage = multer.diskStorage({
+      destination: function (req, file, cb) {
+        cb(null, filePath);
+      },
+      filename: function (req, file, cb) {
+        const safeName = path.basename(file.originalname);
+        cb(null, safeName);
+      }
+    });
+
+    // Set a file size limit, for example 5GB, to prevent disk exhaustion.
+    const uploadOptions = {
+      storage: storage,
+      limits: { fileSize: 5 * 1024 * 1024 * 1024 }
+    };
+    const uploadMulti = multer(uploadOptions).array('files');
+
+    app.get('/', requireAuth, (req, res) => {
+      res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #121212; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+            .container { background-color: #1e1e1e; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); text-align: center; }
+            input[type="file"] { margin: 20px 0; }
+            button { background-color: #34c759; color: white; border: none; padding: 15px 30px; border-radius: 8px; font-size: 18px; cursor: pointer; width: 100%; }
+            button:hover { background-color: #28a745; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h2>Upload Files</h2>
+            <form method="POST" action="/upload" enctype="multipart/form-data">
+              <input type="file" name="files" multiple required>
+              <button type="submit">Send to Computer</button>
+            </form>
+          </div>
+        </body>
+        </html>
+      `);
+    });
+
+    app.post('/upload', requireAuth, (req, res, next) => {
+      const deviceId = req.signedCookies.deviceId;
+      activeDevices.add(deviceId);
+      if (activeDevices.size === 1 && onTransferStart) onTransferStart();
+
+      const onDone = () => {
+        if (activeDevices.has(deviceId)) {
+          activeDevices.delete(deviceId);
+          if (activeDevices.size === 0 && onTransferIdle) onTransferIdle();
+        }
+      };
+      res.on('finish', onDone);
+      res.on('close', onDone);
+      
+      next();
+    }, uploadMulti, (req, res) => {
+      if (req.files && req.files.length > 0) {
+        successfulDevices.add(req.signedCookies.deviceId);
+
+        req.files.forEach(f => {
+          // Sanitize log output to prevent console injection
+          const safeOriginalName = f.originalname.replace(/[\x00-\x1F\x7F-\x9F]/g, '');
+          console.log(`\nReceived: ${safeOriginalName}`);
+        });
+
+        // Note: receive mode should stay open indefinitely. We DO NOT increment successfulTransfers
+        // or call onTransferComplete() to avoid shutting down the server. The user will stop it with Ctrl+C.
+        res.send('Files uploaded successfully! <a href="/">Upload more</a> or close this page.');
+      } else {
+        res.status(400).send('Upload failed.');
+      }
+    });
+
+  } else {
+    // Send Mode Setup
+    app.get('/', requireAuth, async (req, res) => {
+      const deviceId = req.signedCookies.deviceId;
+
+      // Since express executes in a single thread, adding to activeDevices here prevents
+      // concurrent requests from exceeding the limit.
+      activeDevices.add(deviceId);
+
+      if (activeDevices.size === 1 && onTransferStart) onTransferStart();
+
+      // Handle aborting stream if connection drops
+      req.on('close', () => {
+        if (!res.writableEnded) {
+          if (activeDevices.has(deviceId)) {
+            activeDevices.delete(deviceId);
+            if (activeDevices.size === 0 && onTransferIdle) onTransferIdle();
+          }
+          onTransferError(new Error('ERR_CLIENT_DISCONNECTED'));
+        }
+      });
+      
+      const onStreamComplete = () => {
+         if (activeDevices.has(deviceId)) {
+           activeDevices.delete(deviceId);
+           if (activeDevices.size === 0 && onTransferIdle) onTransferIdle();
+         }
+         successfulTransfers++;
+         successfulDevices.add(deviceId);
+         if (successfulTransfers >= transferLimit) {
+           onTransferComplete();
+         }
+      };
+
+      if (isDir) {
+        res.setHeader('Content-Type', 'application/zip');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}.zip"`);
+
+        const archive = new archiver.ZipArchive({ zlib: { level: 1 } });
+
+        archive.on('error', function(err) {
+          if (activeDevices.has(deviceId)) {
+            activeDevices.delete(deviceId);
+            if (activeDevices.size === 0 && onTransferIdle) onTransferIdle();
+          }
+          onTransferError(err);
+        });
+
+        res.on('finish', () => {
+            onStreamComplete();
+        });
+
+        res.on('close', () => {
+          if (!res.writableEnded) {
+            archive.abort();
+          }
+        });
+
+        archive.pipe(res);
+        archive.directory(filePath, fileName);
+        await archive.finalize();
+
+      } else {
+        const fileStat = await fs.promises.stat(filePath);
+        const contentType = mime.getType(filePath) || 'application/octet-stream';
+        const encodedFileName = encodeURIComponent(fileName).replace(/['()]/g, escape).replace(/\*/g, '%2A');
+        const contentDisposition = `attachment; filename="${fileName.replace(/"/g, '\\"')}"; filename*=UTF-8''${encodedFileName}`;
+
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Length', fileStat.size);
+        res.setHeader('Content-Disposition', contentDisposition);
+
+        const fileStream = fs.createReadStream(filePath);
+
+        fileStream.on('error', (err) => {
+          onTransferError(err);
+          req.socket.destroy();
+        });
+
+        res.on('finish', () => {
+          onStreamComplete();
+        });
+
+        res.on('close', () => {
+          if (!res.writableEnded) {
+            fileStream.destroy();
+          }
+        });
+
+        fileStream.pipe(res);
+      }
+    });
+  }
+
+  const server = http.createServer(app);
+  const sockets = new Set();
+
   server.on('connection', (socket) => {
     sockets.add(socket);
     socket.once('close', () => sockets.delete(socket));
   });
 
-  /**
-   * Graceful shutdown sequence
-   * @returns {Promise<void>}
-   */
   const shutdown = () => {
     return new Promise((resolve) => {
       let resolved = false;
@@ -183,42 +318,38 @@ async function createServer({
         resolve();
       };
 
-      // 5. Times out after 3 seconds and force-resolves regardless
       const forceTimeout = setTimeout(finish, 3000);
 
-      // 3. Unregisters the mDNS service (via injected callback)
       if (typeof options.onShutdown === 'function') {
         try {
           options.onShutdown();
         } catch (err) {
-          if (options.verbose) {
-            console.error('mDNS unregister error:', err);
-          }
+          if (options.verbose) console.error('mDNS unregister error:', err);
         }
       }
 
-      // 1. Calls server.close() to stop accepting new connections
       server.close(() => {
         clearTimeout(forceTimeout);
         finish();
       });
 
-      // 2. Destroys any open sockets
       for (const socket of sockets) {
         socket.destroy();
       }
     });
   };
 
-  return new Promise((resolve, reject) => {
-    // Listen to error only for binding issues (e.g. EADDRINUSE)
-    server.once('error', reject);
-    
-    server.listen(port, () => {
-      server.removeListener('error', reject);
-      resolve({ server, shutdown });
-    });
-  });
+  const start = () => {
+      return new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(port, () => {
+            server.removeListener('error', reject);
+            resolve();
+        });
+      });
+  };
+
+  return { server, shutdown, start };
 }
 
 module.exports = { createServer };

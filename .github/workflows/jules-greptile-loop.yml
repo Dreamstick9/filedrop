@@ -1,0 +1,90 @@
+name: Greptile-Jules Auto-Fix Loop
+
+on:
+  pull_request_review:
+    types: [submitted, edited]
+
+jobs:
+  invoke-jules-on-low-score:
+    name: Invoke Jules if Greptile Score < 4
+    # Only run when the reviewer is the Greptile bot
+    if: >-
+      github.event.review.user.login == 'greptile-apps[bot]' ||
+      github.event.review.user.login == 'greptile-apps'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      # Greptile triggers the pull_request_review event before fully
+      # populating the review body. Wait for it to finish writing.
+      - name: Wait for Greptile review to populate
+        run: sleep 20
+
+      # Fetch the review body via the GitHub API instead of relying
+      # on the (often empty) event payload.
+      - name: Fetch and parse Greptile review
+        id: parse
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          REVIEW_ID: ${{ github.event.review.id }}
+        run: |
+          # 1. Try the specific review that triggered this event
+          BODY=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/reviews/${REVIEW_ID}" \
+            --jq '.body' 2>/dev/null || echo "")
+
+          # 2. Fallback: grab the latest Greptile issue comment
+          if [ -z "$BODY" ]; then
+            echo "Review body empty, trying issue comments..."
+            BODY=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" \
+              --jq '[.[] | select(.user.login == "greptile-apps" or .user.login == "greptile-apps[bot]")] | last | .body' \
+              2>/dev/null || echo "")
+          fi
+
+          echo "Body length: ${#BODY} chars"
+
+          # Parse the Confidence Score (e.g. "Confidence Score: 2/5")
+          SCORE=$(echo "$BODY" \
+            | grep -oP '(?i)confidence\s+score[:\s]*\K[0-9]+(?=\s*/\s*5)' \
+            | head -1)
+
+          echo "Parsed score: ${SCORE:-not found}"
+          echo "score=${SCORE}" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$SCORE" ] && [ "$SCORE" -lt 4 ]; then
+            echo "should_invoke=true"  >> "$GITHUB_OUTPUT"
+            echo "should_merge=false" >> "$GITHUB_OUTPUT"
+            echo "✅ Score ${SCORE}/5 is below threshold — invoking Jules"
+          elif [ -n "$SCORE" ] && [ "$SCORE" -ge 4 ]; then
+            echo "should_invoke=false" >> "$GITHUB_OUTPUT"
+            echo "should_merge=true" >> "$GITHUB_OUTPUT"
+            echo "✅ Score ${SCORE}/5 meets threshold — ready to merge"
+          else
+            echo "should_invoke=false" >> "$GITHUB_OUTPUT"
+            echo "should_merge=false" >> "$GITHUB_OUTPUT"
+            echo "ℹ️  Score ${SCORE:-unknown}/5 is unknown — skipping Jules"
+          fi
+
+      - name: Invoke Jules to fix the issues
+        if: steps.parse.outputs.should_invoke == 'true'
+        uses: google-labs-code/jules-invoke@v1.0.0
+        with:
+          jules_api_key:       ${{ secrets.JULES_API_KEY }}
+          starting_branch:     ${{ github.event.pull_request.head.ref }}
+          prompt: |
+            A Greptile code review gave PR #${{ github.event.pull_request.number }} a score of ${{ steps.parse.outputs.score }}/5 (threshold: 4/5).
+
+            Read the review at: ${{ github.event.pull_request.html_url }}
+
+            Fix every issue Greptile flagged. Rules:
+            - Fix only what Greptile flagged
+            - Keep changes minimal and surgical
+
+      - name: Automatically Merge PR
+        if: steps.parse.outputs.should_merge == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr merge ${{ github.event.pull_request.number }} --merge --admin
