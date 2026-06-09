@@ -54,8 +54,25 @@ async function createServer({
 <head>
   <meta charset="utf-8">
   <title>Download</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #000; color: #fff; margin: 0; }
+    .container { text-align: center; padding: 30px; border-radius: 16px; background: rgba(20,20,20,0.8); backdrop-filter: blur(10px); box-shadow: 0 8px 32px rgba(0,0,0,0.5); border: 1px solid #333; width: 80%; max-width: 320px; }
+    h1 { font-size: 1.2rem; margin-bottom: 24px; word-break: break-all; color: #EAEAEA; }
+    .progress-bar { width: 100%; height: 12px; background: #222; border-radius: 6px; overflow: hidden; margin-bottom: 12px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.8); }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, #0A84FF, #5E5CE6); width: 0%; transition: width 0.1s linear; box-shadow: 0 0 10px rgba(10,132,255,0.5); }
+    .status-row { display: flex; justify-content: space-between; font-size: 0.85rem; color: #888; }
+  </style>
 </head>
 <body>
+  <div class="container">
+    <h1>${escapeHtml(fileName)}</h1>
+    <div class="progress-bar"><div class="progress-fill" id="progress"></div></div>
+    <div class="status-row">
+      <span id="statusText">Connecting...</span>
+      <span id="percentText">0%</span>
+    </div>
+  </div>
   <script src="/forge.min.js"></script>
   <script>
     function u8ToBinaryString(u8) {
@@ -68,13 +85,50 @@ async function createServer({
     }
 
     (async function() {
+      const statusEl = document.getElementById('statusText');
+      const percentEl = document.getElementById('percentText');
+      const progressEl = document.getElementById('progress');
+
       try {
         const hash = window.location.hash.slice(1);
-        if (!hash) return;
+        if (!hash) {
+          statusEl.innerText = "Error: Missing Key";
+          return;
+        }
         
+        statusEl.innerText = "Fetching...";
         const response = await fetch('/download');
-        if (!response.ok) return;
-        const encryptedBuffer = await response.arrayBuffer();
+        if (!response.ok) {
+          statusEl.innerText = "Error: Link Expired";
+          return;
+        }
+
+        const contentLength = response.headers.get('Content-Length');
+        const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
+        let loadedBytes = 0;
+        const chunks = [];
+        const reader = response.body.getReader();
+
+        statusEl.innerText = "Downloading...";
+        while(true) {
+          const {done, value} = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          loadedBytes += value.length;
+          if (totalBytes > 0) {
+            const percent = Math.round((loadedBytes / totalBytes) * 100);
+            progressEl.style.width = percent + "%";
+            percentEl.innerText = percent + "%";
+          }
+        }
+
+        statusEl.innerText = "Decrypting...";
+        const encryptedBuffer = new Uint8Array(loadedBytes);
+        let position = 0;
+        for (let chunk of chunks) {
+          encryptedBuffer.set(chunk, position);
+          position += chunk.length;
+        }
         
         const iv = new Uint8Array(encryptedBuffer.slice(0, 12));
         const data = new Uint8Array(encryptedBuffer.slice(12));
@@ -120,6 +174,10 @@ async function createServer({
           }
         }
         
+        statusEl.innerText = "Transfer Complete!";
+        percentEl.innerText = "100%";
+        progressEl.style.width = "100%";
+
         const blob = new Blob([decryptedBuffer], { type: "application/octet-stream" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -133,8 +191,10 @@ async function createServer({
         setTimeout(() => {
           window.close();
           window.history.back();
-        }, 500);
+        }, 3000);
       } catch (err) {
+        statusEl.innerText = "Decryption Failed";
+        statusEl.style.color = "#FF453A";
         console.error(err);
       }
     })();
@@ -225,6 +285,7 @@ async function createServer({
     res.setHeader('Connection', 'close');
     res.setHeader('X-Filedrop-Version', version);
     res.setHeader('X-Transfer-ID', transferId);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Length');
 
     let responseFinished = false;
     let transferConcluded = false;
