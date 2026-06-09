@@ -70,7 +70,17 @@ async function createServer({
     <p id="status">Decrypting & Downloading...</p>
     <div class="progress-bar"><div class="progress-fill" id="progress"></div></div>
   </div>
+  <script src="/forge.min.js"></script>
   <script>
+    function u8ToBinaryString(u8) {
+      let res = '';
+      const chunk = 10000;
+      for (let i = 0; i < u8.length; i += chunk) {
+        res += String.fromCharCode.apply(null, u8.subarray(i, i + chunk));
+      }
+      return res;
+    }
+
     (async function() {
       const statusEl = document.getElementById('status');
       const progressEl = document.getElementById('progress');
@@ -78,11 +88,6 @@ async function createServer({
         const hash = window.location.hash.slice(1);
         if (!hash) throw new Error("Missing decryption key in URL");
         
-        const keyBytes = new Uint8Array(hash.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
-        const key = await crypto.subtle.importKey(
-          "raw", keyBytes, { name: "AES-GCM" }, false, ["decrypt"]
-        );
-
         statusEl.innerText = "Downloading encrypted file...";
         const response = await fetch('/download');
         if (!response.ok) throw new Error("File not found or already transferred.");
@@ -90,14 +95,49 @@ async function createServer({
         const encryptedBuffer = await response.arrayBuffer();
         statusEl.innerText = "Decrypting locally...";
         
-        const iv = encryptedBuffer.slice(0, 12);
-        const data = encryptedBuffer.slice(12);
+        const iv = new Uint8Array(encryptedBuffer.slice(0, 12));
+        const data = new Uint8Array(encryptedBuffer.slice(12));
         
-        const decryptedBuffer = await crypto.subtle.decrypt(
-          { name: "AES-GCM", iv: new Uint8Array(iv) },
-          key,
-          data
-        );
+        let decryptedBuffer;
+        if (window.crypto && window.crypto.subtle) {
+          const keyBytes = new Uint8Array(hash.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+          const key = await crypto.subtle.importKey(
+            "raw", keyBytes, { name: "AES-GCM" }, false, ["decrypt"]
+          );
+          decryptedBuffer = await crypto.subtle.decrypt(
+            { name: "AES-GCM", iv: iv },
+            key,
+            data
+          );
+        } else {
+          console.log("Using node-forge fallback for decryption.");
+          if (!window.forge) throw new Error("Cryptography fallback not loaded.");
+          
+          const keyBytesStr = forge.util.hexToBytes(hash);
+          const ivStr = u8ToBinaryString(iv);
+          
+          const tagLen = 16;
+          if (data.length < tagLen) throw new Error("Ciphertext too short.");
+          
+          const cipherBytesStr = u8ToBinaryString(data.subarray(0, data.length - tagLen));
+          const tagStr = u8ToBinaryString(data.subarray(data.length - tagLen));
+          
+          const decipher = forge.cipher.createDecipher('AES-GCM', keyBytesStr);
+          decipher.start({
+            iv: ivStr,
+            tagLength: 128,
+            tag: forge.util.createBuffer(tagStr)
+          });
+          decipher.update(forge.util.createBuffer(cipherBytesStr));
+          const pass = decipher.finish();
+          if (!pass) throw new Error("Decryption failed (authentication tag mismatch).");
+          
+          const decryptedString = decipher.output.getBytes();
+          decryptedBuffer = new Uint8Array(decryptedString.length);
+          for (let i = 0; i < decryptedString.length; i++) {
+            decryptedBuffer[i] = decryptedString.charCodeAt(i);
+          }
+        }
         
         statusEl.innerText = "Saving file...";
         progressEl.style.width = "100%";
@@ -127,8 +167,14 @@ async function createServer({
   const server = http.createServer((req, res) => {
     const { method, url } = req;
     
+    if (url === '/forge.min.js') {
+      res.writeHead(200, { 'Content-Type': 'application/javascript', 'Cache-Control': 'max-age=31536000' });
+      fs.createReadStream(path.join(__dirname, '../node_modules/node-forge/dist/forge.min.js')).pipe(res);
+      return;
+    }
+
     // Serve the HTML Decryptor Interface
-    if (url === '/' || url === \`/\${encodeURI(fileName)}\`) {
+    if (url === '/' || url === `/${encodeURI(fileName)}`) {
       if (hasTransferred) {
         res.writeHead(410, { 'Content-Type': 'text/plain' });
         res.end('This file has already been transferred.');

@@ -136,7 +136,7 @@ async function main() {
   } else {
     console.log(`URL: ${url}`);
     if (config.mdns) {
-      console.log(`mDNS: http://${mdnsName}.local/#${keyHex}`);
+      console.log(`mDNS: http://${mdnsName}.local:${port}/#${keyHex}`);
     }
   }
 
