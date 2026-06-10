@@ -104,10 +104,19 @@ async function main() {
   let isTransferring = false;
   let timeoutHandle;
 
+  const readline = require('readline').createInterface({ input: process.stdin, output: process.stdout });
+  const limit = await new Promise(resolve => {
+    readline.question('How many devices will download this file? [1]: ', ans => {
+      readline.close();
+      resolve(parseInt(ans, 10) || 1);
+    });
+  });
+
   const { shutdown: httpAppShutdown, keyHex } = await server.createServer({
     filePath: config.filePath,
     port: port,
     isDirectory: config.isDirectory,
+    downloadLimit: limit,
     options: {
       timeout: config.timeout,
       verbose: config.verbose
@@ -117,13 +126,20 @@ async function main() {
       clearTimeout(timeoutHandle); // reset/cancel connection timeout
       qr.updateStatus('transferring', { color: config.color });
     },
-    onTransferComplete: () => {
-      isTransferring = false;
-      transferCompleteResolve();
+    onTransferComplete: (completedCount, downloadLimit) => {
+      qr.updateStatus(`Downloads: ${completedCount} / ${downloadLimit}`, { color: config.color });
+      if (completedCount >= downloadLimit) {
+        isTransferring = false;
+        transferCompleteResolve();
+      }
     },
     onTransferError: (err) => {
-      isTransferring = false;
-      transferErrorReject(err);
+      if (err.message && err.message.includes('ERR_CLIENT_DISCONNECTED')) {
+        // Disconnect frees the slot, server remains active
+      } else {
+        isTransferring = false;
+        transferErrorReject(err);
+      }
     }
   });
 

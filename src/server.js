@@ -18,6 +18,7 @@ async function createServer({
   port,
   isDirectory = false,
   options = {},
+  downloadLimit = 1,
   onTransferStart,
   onTransferComplete,
   onTransferError
@@ -50,7 +51,8 @@ async function createServer({
   const version = options.version || '1.0.0';
   const timeoutMs = options.timeout ? options.timeout * 1000 : 60000;
   
-  let hasTransferred = false;
+  const completedIPs = new Set();
+  const activeIPs = new Set();
   const sockets = new Set();
 
   // Rate limiting: max 30 requests per 10 seconds per IP
@@ -275,9 +277,19 @@ async function createServer({
 
     // Serve the HTML Decryptor Interface
     if (url === '/' || url === `/${encodeURI(fileName)}`) {
-      if (hasTransferred) {
+      if (completedIPs.has(clientIp)) {
         res.writeHead(410, { 'Content-Type': 'text/plain' });
         res.end('This file has already been transferred.');
+        return;
+      }
+      if (activeIPs.has(clientIp)) {
+        res.writeHead(429, { 'Content-Type': 'text/plain', 'Retry-After': '5' });
+        res.end('You are already downloading this file.');
+        return;
+      }
+      if (completedIPs.size + activeIPs.size >= downloadLimit) {
+        res.writeHead(429, { 'Content-Type': 'text/plain', 'Retry-After': '10' });
+        res.end('Too Many Requests');
         return;
       }
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -292,13 +304,28 @@ async function createServer({
       return;
     }
 
-    if (hasTransferred && method === 'GET') {
+    if (completedIPs.has(clientIp) && method === 'GET') {
       res.writeHead(410, {
         'Content-Type': 'text/plain',
         'X-Filedrop-Version': version,
         'X-Transfer-ID': transferId
       });
       res.end('This file has already been transferred.', () => {
+        req.socket.destroy();
+      });
+      return;
+    }
+
+    if (activeIPs.has(clientIp)) {
+      res.writeHead(429, { 'Content-Type': 'text/plain', 'Retry-After': '5' });
+      res.end('You are already downloading this file.', () => {
+        req.socket.destroy();
+      });
+      return;
+    }
+    if (completedIPs.size + activeIPs.size >= downloadLimit) {
+      res.writeHead(429, { 'Content-Type': 'text/plain', 'Retry-After': '10' });
+      res.end('Too Many Requests', () => {
         req.socket.destroy();
       });
       return;
@@ -323,10 +350,10 @@ async function createServer({
     }
 
     // It's the /download endpoint, encrypt and stream
-    if (typeof onTransferStart === 'function' && !hasTransferred) {
+    if (typeof onTransferStart === 'function' && !activeIPs.has(clientIp)) {
       onTransferStart();
     }
-    hasTransferred = true;
+    activeIPs.add(clientIp);
 
     res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader('Content-Disposition', contentDisposition);
@@ -358,8 +385,11 @@ async function createServer({
       clearTimeout(transferTimeout);
       
       if (responseFinished) {
-        onTransferComplete();
+        activeIPs.delete(clientIp);
+        completedIPs.add(clientIp);
+        onTransferComplete(completedIPs.size, downloadLimit);
       } else {
+        activeIPs.delete(clientIp);
         if (sourceStream) sourceStream.destroy();
         onTransferError(new Error('ERR_CLIENT_DISCONNECTED'));
       }
@@ -369,7 +399,7 @@ async function createServer({
     try {
       if (isDirectory) {
         const archive = new archiver.ZipArchive({ zlib: { level: 5 } });
-        archive.directory(filePath, false);
+        archive.directory(filePath, path.basename(filePath));
         archive.finalize();
         sourceStream = archive;
       } else {
