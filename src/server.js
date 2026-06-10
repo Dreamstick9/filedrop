@@ -22,6 +22,8 @@ async function createServer({
 }) {
   const fileName = path.basename(filePath);
   const transferId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
+  const downloadToken = crypto.randomBytes(16).toString('hex');
+  const downloadPath = `/download/${downloadToken}`;
   
   // Generate E2EE Key
   const aesKey = crypto.randomBytes(32);
@@ -48,6 +50,36 @@ async function createServer({
   
   let hasTransferred = false;
   const sockets = new Set();
+
+  // Rate limiting: max 30 requests per 10 seconds per IP
+  const rateLimitWindow = 10000; // 10 seconds
+  const rateLimitMax = 30;
+  const ipRequestCounts = new Map();
+
+  function checkRateLimit(ip) {
+    const now = Date.now();
+    let record = ipRequestCounts.get(ip);
+    if (!record || (now - record.windowStart) > rateLimitWindow) {
+      record = { windowStart: now, count: 1 };
+      ipRequestCounts.set(ip, record);
+      return true; // allowed
+    }
+    record.count++;
+    if (record.count > rateLimitMax) {
+      return false; // blocked
+    }
+    return true; // allowed
+  }
+
+  const rateLimitCleanup = setInterval(() => {
+    const now = Date.now();
+    for (const [ip, record] of ipRequestCounts) {
+      if ((now - record.windowStart) > rateLimitWindow * 2) {
+        ipRequestCounts.delete(ip);
+      }
+    }
+  }, rateLimitWindow * 2);
+  rateLimitCleanup.unref();
 
   const htmlPayload = `<!DOCTYPE html>
 <html>
@@ -97,7 +129,7 @@ async function createServer({
         }
         
         statusEl.innerText = "Fetching...";
-        const response = await fetch('/download');
+        const response = await fetch('${downloadPath}');
         if (!response.ok) {
           statusEl.innerText = "Error: Link Expired";
           return;
@@ -205,6 +237,13 @@ async function createServer({
 
   const server = http.createServer((req, res) => {
     const { method, url } = req;
+
+    const clientIp = req.socket.remoteAddress;
+    if (!checkRateLimit(clientIp)) {
+      res.writeHead(429, { 'Content-Type': 'text/plain', 'Retry-After': '10' });
+      res.end('Too Many Requests');
+      return;
+    }
     
     if (url === '/forge.min.js') {
       const forgePath = path.join(__dirname, '../node_modules/node-forge/dist/forge.min.js');
@@ -233,7 +272,7 @@ async function createServer({
     }
 
     // Reject unknown paths
-    if (url !== '/download') {
+    if (url !== downloadPath) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('Not Found');
       return;
@@ -371,6 +410,7 @@ async function createServer({
   });
 
   const shutdown = () => {
+    clearInterval(rateLimitCleanup);
     return new Promise((resolve) => {
       let resolved = false;
       const finish = () => {
