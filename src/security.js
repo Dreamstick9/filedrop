@@ -19,29 +19,6 @@ function validateToken(url, token) {
 }
 
 /**
- * Creates a connection limiter middleware to prevent connection flooding.
- * @param {number} maxConnections - Maximum allowed concurrent connections
- * @returns {Object} Connection limiter with handleConnection method
- */
-function createConnectionLimiter(maxConnections = 3) {
-  let currentConnections = 0;
-
-  return {
-    handleConnection: (socket, rejectCallback) => {
-      if (currentConnections >= maxConnections) {
-        rejectCallback();
-        return false;
-      }
-      currentConnections++;
-      socket.once('close', () => {
-        currentConnections--;
-      });
-      return true;
-    }
-  };
-}
-
-/**
  * Checks if a file is potentially sensitive based on heuristic patterns.
  * @param {string} filePath - Path to the file
  * @returns {boolean} True if potentially sensitive
@@ -86,7 +63,6 @@ async function confirmSensitiveFile(filePath) {
 
 module.exports = {
   validateToken,
-  createConnectionLimiter,
   isSensitiveFile,
   confirmSensitiveFile
 };
