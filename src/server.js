@@ -22,6 +22,8 @@ async function createServer({
 }) {
   const fileName = path.basename(filePath);
   const transferId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
+  const downloadToken = crypto.randomBytes(16).toString('hex');
+  const downloadPath = `/download/${downloadToken}`;
   
   // Generate E2EE Key
   const aesKey = crypto.randomBytes(32);
@@ -127,7 +129,7 @@ async function createServer({
         }
         
         statusEl.innerText = "Fetching...";
-        const response = await fetch('/download');
+        const response = await fetch('${downloadPath}');
         if (!response.ok) {
           statusEl.innerText = "Error: Link Expired";
           return;
@@ -270,7 +272,7 @@ async function createServer({
     }
 
     // Reject unknown paths
-    if (url !== '/download') {
+    if (url !== downloadPath) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('Not Found');
       return;
