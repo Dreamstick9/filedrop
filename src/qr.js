@@ -202,16 +202,18 @@ function updateStatus(status, options = {}) {
   const { color = supportsColor() } = options;
   
   let prefix, msg, msgLen;
-  if (status === 'transferring') {
+  if (status.startsWith('transferring') || status.startsWith('Downloads:')) {
     prefix = color ? `  │  ⬇️  ` : `  |  [Wait]  `;
-    msg = `Transferring...`;
+    msg = status;
     msgLen = color ? 6 + msg.length : 10 + msg.length;
   } else if (status === 'done') {
     prefix = color ? `  │  ✅  ` : `  |  [Done]  `;
     msg = `Done. Goodbye.`;
     msgLen = color ? 6 + msg.length : 10 + msg.length;
   } else {
-    return;
+    prefix = color ? `  │  ℹ️  ` : `  |  [Info]  `;
+    msg = status;
+    msgLen = color ? 6 + msg.length : 10 + msg.length;
   }
   
   const padding = Math.max(0, lastBoxWidth - msgLen);
