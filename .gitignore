@@ -1,1 +1,12 @@
+node_modules/
+.DS_Store
+
+# Dev scripts and research
 research/
+docs/
+*.sh
+test_*.js
+test-server.js
+find_dupes.js
+test-ephemeral.sh
+qa_test.sh
