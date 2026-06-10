@@ -1,3 +1,10 @@
+node_modules/
+.DS_Store
+.env
+coverage/
+.nyc_output/
+*.log
+encrypted.bin
 docs/
 research/
 *.sh
