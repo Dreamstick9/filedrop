@@ -410,6 +410,7 @@ async function createServer({
   });
 
   const shutdown = () => {
+    clearInterval(rateLimitCleanup);
     return new Promise((resolve) => {
       let resolved = false;
       const finish = () => {
