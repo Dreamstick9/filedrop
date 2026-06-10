@@ -150,11 +150,16 @@ async function createServer({
       const setStatus = (txt) => { if (statusEl) statusEl.innerText = txt; };
       const setPercent = (txt) => { if (percentEl) percentEl.innerText = txt; };
       const setProgressWidth = (width) => { if (progressEl) progressEl.style.width = width; };
+      const setClipText = (txt) => {
+        const textArea = document.getElementById('clipText');
+        if (textArea) textArea.value = txt;
+      };
 
       try {
         const hash = window.location.hash.slice(1);
         if (!hash) {
           setStatus("Error: Missing Key");
+          setClipText("Error: Missing decryption key in URL.");
           return;
         }
         
@@ -162,6 +167,10 @@ async function createServer({
         const response = await fetch('${downloadPath}');
         if (!response.ok) {
           setStatus("Error: Link Expired");
+          setClipText("Error: Link expired or already copied.");
+          if (${isClipboard}) {
+            window.close();
+          }
           return;
         }
 
@@ -254,8 +263,7 @@ async function createServer({
 
         if (${isClipboard}) {
           const text = new TextDecoder().decode(decryptedBuffer);
-          const textArea = document.getElementById('clipText');
-          if (textArea) textArea.value = text;
+          setClipText(text);
           
           document.getElementById('copyBtn').addEventListener('click', () => {
             const btn = document.getElementById('copyBtn');
@@ -307,8 +315,12 @@ async function createServer({
         }
       } catch (err) {
         setStatus("Decryption Failed");
+        setClipText("Error: Decryption failed or link expired.");
         if (statusEl) statusEl.style.color = "#FF453A";
         console.error(err);
+        if (${isClipboard}) {
+          window.close();
+        }
       }
     })();
   </script>
