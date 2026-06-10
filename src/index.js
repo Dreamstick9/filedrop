@@ -3,7 +3,7 @@
 const { parseArgs } = require('./cli');
 const path = require('path');
 const crypto = require('crypto');
-const clipboardy = require('clipboardy');
+const clipboardy = require('clipboardy').default || require('clipboardy');
 
 // Assumed imports from other agents
 const network = require('./network');
