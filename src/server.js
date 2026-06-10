@@ -47,7 +47,7 @@ async function createServer({
   
   let fileStat;
   try {
-    if (!isClipboard) {
+    if (!isClipboard && !isMultiFile) {
       fileStat = await fs.promises.stat(filePath);
     }
   } catch (err) {
