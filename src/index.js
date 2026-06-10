@@ -85,10 +85,12 @@ async function main() {
       console.error(`filedrop: error: Failed to read clipboard: ${err.message}`);
       process.exit(1);
     }
+  } else if (config.isMultiFile) {
+    filename = 'filedrop-bundle.zip';
+  } else if (config.isDirectory) {
+    filename = path.basename(config.filePath) + '.zip';
   } else {
-    filename = config.isDirectory 
-      ? path.basename(config.filePath) + '.zip'
-      : path.basename(config.filePath);
+    filename = path.basename(config.filePath);
   }
 
   // 5. Initialize mDNS module (non-blocking)
@@ -132,6 +134,8 @@ async function main() {
 
   const { shutdown: httpAppShutdown, keyHex } = await server.createServer({
     filePath: config.filePath,
+    filePaths: config.filePaths,
+    isMultiFile: config.isMultiFile,
     clipboardData,
     isClipboard: config.isClipboard,
     port: port,

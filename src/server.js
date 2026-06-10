@@ -15,6 +15,8 @@ function escapeHtml(unsafe) {
 
 async function createServer({
   filePath,
+  filePaths = [],
+  isMultiFile = false,
   clipboardData = null,
   isClipboard = false,
   port,
@@ -25,9 +27,16 @@ async function createServer({
   onTransferComplete,
   onTransferError
 }) {
-  const fileName = isClipboard
-    ? 'clipboard.txt'
-    : (isDirectory ? path.basename(filePath) + '.zip' : path.basename(filePath));
+  let fileName;
+  if (isClipboard) {
+    fileName = 'clipboard.txt';
+  } else if (isMultiFile) {
+    fileName = 'filedrop-bundle.zip';
+  } else if (isDirectory) {
+    fileName = path.basename(filePath) + '.zip';
+  } else {
+    fileName = path.basename(filePath);
+  }
   const transferId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
   const downloadToken = crypto.randomBytes(16).toString('hex');
   const downloadPath = `/download/${downloadToken}`;
@@ -38,7 +47,7 @@ async function createServer({
   
   let fileStat;
   try {
-    if (!isClipboard) {
+    if (!isClipboard && !isMultiFile) {
       fileStat = await fs.promises.stat(filePath);
     }
   } catch (err) {
@@ -364,7 +373,7 @@ async function createServer({
       res.setHeader('Connection', 'close');
       res.setHeader('X-Filedrop-Version', version);
       res.setHeader('X-Transfer-ID', transferId);
-      if (!isDirectory && !isClipboard) res.setHeader('Content-Length', fileStat.size + 28);
+      if (!isDirectory && !isClipboard && !isMultiFile) res.setHeader('Content-Length', fileStat.size + 28);
       res.end();
       return;
     }
@@ -382,7 +391,7 @@ async function createServer({
     res.setHeader('X-Filedrop-Version', version);
     res.setHeader('X-Transfer-ID', transferId);
     res.setHeader('Access-Control-Expose-Headers', 'Content-Length');
-    if (!isDirectory && !isClipboard) res.setHeader('Content-Length', fileStat.size + 28);
+    if (!isDirectory && !isClipboard && !isMultiFile) res.setHeader('Content-Length', fileStat.size + 28);
 
     let responseFinished = false;
     let transferConcluded = false;
@@ -419,6 +428,25 @@ async function createServer({
     try {
       if (isClipboard) {
         sourceStream = require('stream').Readable.from([Buffer.from(clipboardData, 'utf8')]);
+      } else if (isMultiFile) {
+        const archive = new archiver.ZipArchive({ zlib: { level: 5 } });
+        const addedNames = new Set();
+        for (const file of filePaths) {
+          let name = path.basename(file);
+          if (addedNames.has(name)) {
+            const ext = path.extname(name);
+            const base = path.basename(name, ext);
+            let counter = 1;
+            while (addedNames.has(`${base}_${counter}${ext}`)) {
+              counter++;
+            }
+            name = `${base}_${counter}${ext}`;
+          }
+          addedNames.add(name);
+          archive.file(file, { name });
+        }
+        archive.finalize();
+        sourceStream = archive;
       } else if (isDirectory) {
         const archive = new archiver.ZipArchive({ zlib: { level: 5 } });
         archive.directory(filePath, path.basename(filePath));

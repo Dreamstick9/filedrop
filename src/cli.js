@@ -9,13 +9,13 @@ function printHelp() {
   console.log(`filedrop — instant local file & folder transfer via QR code
 
 Usage:
-  filedrop <file> [options]
+  filedrop <file-or-dir> [file2 ...] [options]
 
 Examples:
   filedrop ./photo.jpg
   filedrop ./report.pdf --port 9000 --verbose
-  filedrop ./video.mp4 --no-qr
-  filedrop ./my-folder          # serve a directory as .zip
+  filedrop ./photo1.jpg ./photo2.jpg ./photo3.jpg  # serve multiple files as .zip
+  filedrop ./my-folder                             # serve a directory as .zip
 
 Options:
   -p, --port <n>         Specific port to bind (default: auto 8000-8999)
@@ -65,40 +65,53 @@ function parseArgs(argv) {
   }
 
   let filePath = null;
+  let filePaths = [];
+  let isMultiFile = false;
   let isDirectory = false;
   let fileSize = null;
 
-  if (!args.clipboard) {
-    if (args._.length !== 1) {
-      console.error('filedrop: error: exactly one file must be provided (or use --clipboard)');
+  if (args.clipboard) {
+    if (args._.length !== 0) {
+      console.error('filedrop: error: Cannot provide a file path when sharing clipboard');
+      console.error("Run 'filedrop --help' for usage.");
+      process.exit(1);
+    }
+  } else {
+    if (args._.length === 0) {
+      console.error('filedrop: error: at least one file or directory must be provided (or use --clipboard)');
       console.error("Run 'filedrop --help' for usage.");
       process.exit(1);
     }
 
-    filePath = path.resolve(args._[0]);
+    filePaths = args._.map(p => path.resolve(p));
 
-    if (!fs.existsSync(filePath)) {
-      console.error(`filedrop: error: File not found at path: ${filePath}`);
-      console.error("Run 'filedrop --help' for usage.");
-      process.exit(4);
+    for (const p of filePaths) {
+      if (!fs.existsSync(p)) {
+        console.error(`filedrop: error: File not found at path: ${p}`);
+        console.error("Run 'filedrop --help' for usage.");
+        process.exit(4);
+      }
+
+      const stat = fs.statSync(p);
+      if (!stat.isFile() && !stat.isDirectory()) {
+        console.error(`filedrop: error: Path is not a file or directory: ${p}`);
+        console.error("Run 'filedrop --help' for usage.");
+        process.exit(4);
+      }
+
+      try {
+        fs.accessSync(p, fs.constants.R_OK);
+      } catch (err) {
+        console.error(`filedrop: error: Permission denied reading file: ${p}`);
+        console.error("Run 'filedrop --help' for usage.");
+        process.exit(4);
+      }
     }
 
-    const stat = fs.statSync(filePath);
-    isDirectory = stat.isDirectory();
-    fileSize = stat.size;
-    if (!stat.isFile() && !isDirectory) {
-      console.error(`filedrop: error: Path is not a file or directory: ${filePath}`);
-      console.error("Run 'filedrop --help' for usage.");
-      process.exit(4);
-    }
-
-    try {
-      fs.accessSync(filePath, fs.constants.R_OK);
-    } catch (err) {
-      console.error(`filedrop: error: Permission denied reading file: ${filePath}`);
-      console.error("Run 'filedrop --help' for usage.");
-      process.exit(4);
-    }
+    filePath = filePaths[0];
+    isMultiFile = filePaths.length > 1;
+    isDirectory = isMultiFile || fs.statSync(filePath).isDirectory();
+    fileSize = isDirectory ? null : fs.statSync(filePath).size;
   }
 
   let port = null;
@@ -135,7 +148,9 @@ function parseArgs(argv) {
 
   return {
     filePath,
-    fileSize: isDirectory ? null : fileSize,
+    filePaths,
+    isMultiFile,
+    fileSize,
     isDirectory,
     isClipboard: args.clipboard,
     port,
