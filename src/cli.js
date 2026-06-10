@@ -2,7 +2,8 @@ const minimist = require('minimist');
 const fs = require('fs');
 const path = require('path');
 
-const VERSION = '1.0.0';
+const pkg = require('../package.json');
+const VERSION = pkg.version;
 
 function printHelp() {
   console.log(`filedrop — instant local file transfer via QR code
