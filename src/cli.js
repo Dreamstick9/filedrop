@@ -6,7 +6,7 @@ const pkg = require('../package.json');
 const VERSION = pkg.version;
 
 function printHelp() {
-  console.log(`filedrop — instant local file transfer via QR code
+  console.log(`filedrop — instant local file & folder transfer via QR code
 
 Usage:
   filedrop <file> [options]
@@ -15,6 +15,7 @@ Examples:
   filedrop ./photo.jpg
   filedrop ./report.pdf --port 9000 --verbose
   filedrop ./video.mp4 --no-qr
+  filedrop ./my-folder          # serve a directory as .zip
 
 Options:
   -p, --port <n>         Specific port to bind (default: auto 8000-8999)
@@ -77,8 +78,9 @@ function parseArgs(argv) {
   }
 
   const stat = fs.statSync(filePath);
-  if (!stat.isFile()) {
-    console.error(`filedrop: error: Path is a directory, not a file: ${filePath}`);
+  const isDirectory = stat.isDirectory();
+  if (!stat.isFile() && !isDirectory) {
+    console.error(`filedrop: error: Path is not a file or directory: ${filePath}`);
     console.error("Run 'filedrop --help' for usage.");
     process.exit(4);
   }
@@ -125,7 +127,8 @@ function parseArgs(argv) {
 
   return {
     filePath,
-    fileSize: stat.size,
+    fileSize: isDirectory ? null : stat.size,
+    isDirectory,
     port,
     bind: args.bind,
     timeout,

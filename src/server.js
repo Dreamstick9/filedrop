@@ -2,6 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const archiver = require('archiver');
 
 function escapeHtml(unsafe) {
     return unsafe
@@ -15,12 +16,13 @@ function escapeHtml(unsafe) {
 async function createServer({
   filePath,
   port,
+  isDirectory = false,
   options = {},
   onTransferStart,
   onTransferComplete,
   onTransferError
 }) {
-  const fileName = path.basename(filePath);
+  const fileName = isDirectory ? path.basename(filePath) + '.zip' : path.basename(filePath);
   const transferId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
   const downloadToken = crypto.randomBytes(16).toString('hex');
   const downloadPath = `/download/${downloadToken}`;
@@ -94,6 +96,7 @@ async function createServer({
     .progress-bar { width: 100%; height: 12px; background: #222; border-radius: 6px; overflow: hidden; margin-bottom: 12px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.8); }
     .progress-fill { height: 100%; background: linear-gradient(90deg, #0A84FF, #5E5CE6); width: 0%; transition: width 0.1s linear; box-shadow: 0 0 10px rgba(10,132,255,0.5); }
     .status-row { display: flex; justify-content: space-between; font-size: 0.85rem; color: #888; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
   </style>
 </head>
 <body>
@@ -152,6 +155,11 @@ async function createServer({
             const percent = Math.min(100, Math.round((loadedBytes / totalBytes) * 100));
             progressEl.style.width = percent + "%";
             percentEl.innerText = percent + "%";
+          } else {
+            const mb = (loadedBytes / (1024 * 1024)).toFixed(1);
+            percentEl.innerText = mb + " MB";
+            progressEl.style.width = "100%";
+            progressEl.style.animation = "pulse 1.5s ease-in-out infinite";
           }
         }
 
@@ -309,7 +317,7 @@ async function createServer({
       res.setHeader('Connection', 'close');
       res.setHeader('X-Filedrop-Version', version);
       res.setHeader('X-Transfer-ID', transferId);
-      res.setHeader('Content-Length', fileStat.size + 28);
+      if (!isDirectory) res.setHeader('Content-Length', fileStat.size + 28);
       res.end();
       return;
     }
@@ -327,7 +335,7 @@ async function createServer({
     res.setHeader('X-Filedrop-Version', version);
     res.setHeader('X-Transfer-ID', transferId);
     res.setHeader('Access-Control-Expose-Headers', 'Content-Length');
-    res.setHeader('Content-Length', fileStat.size + 28);
+    if (!isDirectory) res.setHeader('Content-Length', fileStat.size + 28);
 
     let responseFinished = false;
     let transferConcluded = false;
@@ -352,20 +360,27 @@ async function createServer({
       if (responseFinished) {
         onTransferComplete();
       } else {
-        if (fileStream) fileStream.destroy();
+        if (sourceStream) sourceStream.destroy();
         onTransferError(new Error('ERR_CLIENT_DISCONNECTED'));
       }
     });
 
-    let fileStream;
+    let sourceStream;
     try {
-      fileStream = fs.createReadStream(filePath);
+      if (isDirectory) {
+        const archive = archiver('zip', { zlib: { level: 5 } });
+        archive.directory(filePath, false);
+        archive.finalize();
+        sourceStream = archive;
+      } else {
+        sourceStream = fs.createReadStream(filePath);
+      }
     } catch (err) {
       onTransferError(err);
       return;
     }
 
-    fileStream.on('error', (err) => {
+    sourceStream.on('error', (err) => {
       if (transferConcluded) return;
       transferConcluded = true;
       clearTimeout(transferTimeout);
@@ -384,20 +399,20 @@ async function createServer({
     // Write IV first
     res.write(iv);
     
-    fileStream.on('data', (chunk) => {
+    sourceStream.on('data', (chunk) => {
       const encrypted = cipher.update(chunk);
       if (encrypted.length > 0) {
         if (!res.write(encrypted)) {
-          fileStream.pause();
+          sourceStream.pause();
         }
       }
     });
 
     res.on('drain', () => {
-      fileStream.resume();
+      sourceStream.resume();
     });
 
-    fileStream.on('end', () => {
+    sourceStream.on('end', () => {
       const finalBuffer = cipher.final();
       if (finalBuffer.length > 0) res.write(finalBuffer);
       const authTag = cipher.getAuthTag();

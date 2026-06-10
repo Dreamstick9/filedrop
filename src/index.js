@@ -69,7 +69,9 @@ async function main() {
   // url and filename will be constructed after server creation
   // so we can get the encryption key and attach it to the URL.
 
-  const filename = path.basename(config.filePath);
+  const filename = config.isDirectory 
+    ? path.basename(config.filePath) + '.zip'
+    : path.basename(config.filePath);
 
   // 5. Initialize mDNS module (non-blocking)
   let mdnsName = config.name || filename.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().substring(0, 15) + '-filedrop';
@@ -105,6 +107,7 @@ async function main() {
   const { shutdown: httpAppShutdown, keyHex } = await server.createServer({
     filePath: config.filePath,
     port: port,
+    isDirectory: config.isDirectory,
     options: {
       timeout: config.timeout,
       verbose: config.verbose
@@ -131,7 +134,8 @@ async function main() {
     const qrString = qr.renderQR(url, { compact: config.qrCompact, noQr: false, color: config.color });
     console.log(qrString);
     if (!config.qrCompact) {
-      console.log(qr.renderMetadataBox(filename, config.fileSize + ' bytes', url, config.mdns ? mdnsName : null, { color: config.color }));
+      const sizeDisplay = config.isDirectory ? '(streaming zip)' : config.fileSize + ' bytes';
+      console.log(qr.renderMetadataBox(filename, sizeDisplay, url, config.mdns ? mdnsName : null, { color: config.color }));
     }
   } else {
     console.log(`URL: ${url}`);
