@@ -25,6 +25,7 @@ Options:
   --no-qr                Suppress QR code, print URL only
   --qr-compact           Print QR code without surrounding metadata box
   --no-mdns              Disable mDNS broadcasting
+  --clipboard            Share system clipboard contents
   --verbose, -v          Verbose output (log all decisions)
   --no-color             Force no-color output (also respects NO_COLOR env var)
   --version              Print version and exit

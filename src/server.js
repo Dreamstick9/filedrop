@@ -24,7 +24,9 @@ async function createServer({
   onTransferComplete,
   onTransferError
 }) {
-  const fileName = isDirectory ? path.basename(filePath) + '.zip' : path.basename(filePath);
+  const fileName = isClipboard
+    ? 'clipboard.txt'
+    : (isDirectory ? path.basename(filePath) + '.zip' : path.basename(filePath));
   const transferId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
   const downloadToken = crypto.randomBytes(16).toString('hex');
   const downloadPath = `/download/${downloadToken}`;
