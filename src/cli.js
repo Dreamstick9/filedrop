@@ -35,8 +35,8 @@ filedrop v${VERSION} — https://github.com/<org>/filedrop`);
 
 function parseArgs(argv) {
   const args = minimist(argv.slice(2), {
-    boolean: ['qr-compact', 'verbose', 'version', 'help', 'qr', 'mdns', 'color'],
-    string: ['port', 'bind', 'timeout', 'name'],
+    boolean: ['qr-compact', 'verbose', 'version', 'help', 'qr', 'mdns'],
+    string: ['port', 'bind', 'timeout', 'name', 'color'],
     alias: {
       p: 'port',
       b: 'bind',

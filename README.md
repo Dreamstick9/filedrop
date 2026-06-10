@@ -67,7 +67,7 @@ Yes! Because of the new Fragment Crypto architecture in v2.0, the file is entire
 PIN codes have been fully deprecated and removed in v2.0. The new Fragment Crypto system is mathematically superior and completely invisible to the user, meaning you no longer have to manually type a PIN into your phone.
 
 **Can I serve a directory?**
-No, `@dreamstick/filedrop` is strictly for transferring single files. If you need to transfer a directory, create a zip archive first.
+Yes! Starting in v2.1.0, you can pass a directory to `filedrop`. It will automatically compress the folder into a `.zip` stream on the fly and pipe it through the AES-256-GCM encryption layer. No temporary zip files are written to your disk.
 
 ## Contributing
 
