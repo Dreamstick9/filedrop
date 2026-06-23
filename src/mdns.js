@@ -163,7 +163,7 @@ async function announce(config) {
       if (winTimeout) clearTimeout(winTimeout);
       
       if (instance) {
-        try { instance.destroy(); } catch (e) {}
+        try { instance.destroy(); } catch (e) { console.error("[mdns] Failed to destroy instance:", e); }
       }
       
       if (isWin) {
@@ -237,7 +237,7 @@ async function deregister() {
           try {
             mdnsInstance.removeListener('query', onQuery);
             mdnsInstance.destroy();
-          } catch (e) {}
+          } catch (e) { console.error("[mdns] Failed to remove listener or destroy instance:", e); }
           mdnsInstance = null;
           currentRecords = [];
           isRegistered = false;
