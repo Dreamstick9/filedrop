@@ -19,6 +19,7 @@ let currentRecords = [];
 let isRegistered = false;
 let activeServiceName = '';
 let activeHostName = '';
+let activeOnQuery = null;
 
 function generateBaseName(filename) {
   const ext = path.extname(filename);
@@ -31,7 +32,7 @@ function buildRecords(serviceName, hostName, ip, port, txtConfig) {
   const serviceInstanceName = `${serviceName}._http._tcp.local`;
   const typeName = `_http._tcp.local`;
   const hostTarget = `${hostName}.local`;
-  
+
   const txtData = [
     Buffer.from(`path=/`),
     Buffer.from(`file=${encodeURIComponent(txtConfig.filename)}`),
@@ -73,23 +74,31 @@ function buildRecords(serviceName, hostName, ip, port, txtConfig) {
   ];
 }
 
-const onQuery = (packet) => {
-  if (!mdnsInstance || currentRecords.length === 0) return;
-  
-  const needsResponse = packet.questions && packet.questions.some(q => {
-    return q.name === `_http._tcp.local` || 
-           q.name === `${activeServiceName}._http._tcp.local` ||
-           q.name === `${activeHostName}.local`;
-  });
-  
-  if (needsResponse) {
-    try {
-      mdnsInstance.respond({ answers: currentRecords });
-    } catch (e) {
-      // Ignore response errors
+function makeOnQuery(verbose) {
+  return (packet) => {
+    if (!mdnsInstance || currentRecords.length === 0) return;
+
+    const needsResponse = packet.questions && packet.questions.some(q => {
+      return q.name === `_http._tcp.local` ||
+        q.name === `${activeServiceName}._http._tcp.local` ||
+        q.name === `${activeHostName}.local`;
+    });
+
+    if (needsResponse) {
+      try {
+        mdnsInstance.respond({ answers: currentRecords }, (err) => {
+          if (err && verbose) {
+            console.debug(`[filedrop:mDNS] respond() error in onQuery: ${err.message}`);
+          }
+        });
+      } catch (e) {
+        if (verbose) {
+          console.debug(`[filedrop:mDNS] respond() threw in onQuery: ${e.message}`);
+        }
+      }
     }
-  }
-};
+  };
+}
 
 async function probe(instance, name, maxSuffix = 10) {
   return new Promise((resolve) => {
@@ -143,7 +152,7 @@ async function probe(instance, name, maxSuffix = 10) {
 async function announce(config) {
   return new Promise((resolve) => {
     const isWin = os.platform() === 'win32';
-    
+
     let instance;
     try {
       instance = mDNS();
@@ -161,11 +170,11 @@ async function announce(config) {
       if (resolved) return;
       resolved = true;
       if (winTimeout) clearTimeout(winTimeout);
-      
+
       if (instance) {
         try { instance.destroy(); } catch (e) { console.error("[mdns] Failed to destroy instance:", e); }
       }
-      
+
       if (isWin) {
         if (config.verbose) {
           console.debug(`mDNS registration skipped on Windows (no elevated permissions or conflict detected).`);
@@ -173,7 +182,7 @@ async function announce(config) {
       } else {
         console.warn(`mDNS unavailable: ${err.message}. Use the QR code or URL directly.`);
       }
-      
+
       resolve({ name: '', mdnsAvailable: false });
     };
 
@@ -187,10 +196,10 @@ async function announce(config) {
 
     let baseServiceName = config.mdnsName || config.mdnsNameOverride || generateBaseName(config.filename);
     baseServiceName = baseServiceName.replace(/\.local$/, '');
-    
+
     probe(instance, baseServiceName).then(finalName => {
       if (resolved) return;
-      
+
       const hostName = os.hostname().replace(/\.local$/, '').toLowerCase().replace(/[^a-z0-9-]/g, '') || 'filedrop';
       currentRecords = buildRecords(finalName, hostName, config.ip, config.port, {
         filename: config.filename,
@@ -202,7 +211,8 @@ async function announce(config) {
       activeHostName = hostName;
       mdnsInstance = instance;
 
-      instance.on('query', onQuery);
+      activeOnQuery = makeOnQuery(config.verbose);
+      instance.on('query', activeOnQuery);
 
       try {
         instance.respond({ answers: currentRecords }, (err) => {
@@ -227,15 +237,16 @@ async function deregister() {
   if (!mdnsInstance || !isRegistered) {
     return Promise.resolve();
   }
-  
+
   return new Promise((resolve) => {
     const goodbyeRecords = currentRecords.map(r => ({ ...r, ttl: 0 }));
-    
+
     try {
       mdnsInstance.respond({ answers: goodbyeRecords }, () => {
         setTimeout(() => {
           try {
-            mdnsInstance.removeListener('query', onQuery);
+            mdnsInstance.removeListener('query', activeOnQuery);
+            activeOnQuery = null;
             mdnsInstance.destroy();
           } catch (e) { console.error("[mdns] Failed to remove listener or destroy instance:", e); }
           mdnsInstance = null;
