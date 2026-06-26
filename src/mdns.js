@@ -262,7 +262,7 @@ async function deregister() {
         }, 200);
       });
     } catch (e) {
-      // Ignore errors on destroy
+      console.warn("[mdns] deregister: error sending goodbye records:", e);
       resolve();
     }
   });
