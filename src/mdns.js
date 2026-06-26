@@ -87,13 +87,19 @@ function makeOnQuery(verbose) {
     if (needsResponse) {
       try {
         mdnsInstance.respond({ answers: currentRecords }, (err) => {
-          if (err && verbose) {
-            console.debug(`[filedrop:mDNS] respond() error in onQuery: ${err.message}`);
+          if (err) {
+            console.warn(`[filedrop:mDNS] respond() error in onQuery: ${err.message}`);
+
+            if (verbose) {
+              console.debug(err);
+            }
           }
         });
       } catch (e) {
+        console.warn(`[filedrop:mDNS] respond() threw in onQuery: ${e.message}`);
+
         if (verbose) {
-          console.debug(`[filedrop:mDNS] respond() threw in onQuery: ${e.message}`);
+          console.debug(e);
         }
       }
     }
