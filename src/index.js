@@ -232,8 +232,16 @@ async function main() {
   if (config.timeout > 0) {
     timeoutHandle = setTimeout(async () => {
       console.error(`\nTransfer timed out after ${config.timeout} seconds.`);
-      if (config.mdns && mdns.teardown) await mdns.teardown().catch(() => {});
-      if (httpAppShutdown) await httpAppShutdown().catch(() => {});
+      if (config.mdns && mdns.teardown){
+        await mdns.teardown().catch(err => {
+        console.error(`filedrop: error: mDNS teardown during timeout failed: ${err.message}`);
+      });
+      }
+      if (httpAppShutdown){
+         await httpAppShutdown().catch(err => {
+          console.error(`filedrop: error: Failed to shut down HTTP server during timeout: ${err.message}`);
+  });
+      }
       process.exit(5);
     }, config.timeout * 1000);
   }
