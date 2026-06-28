@@ -168,11 +168,17 @@ class LifecycleManager extends EventEmitter {
       try {
         await this._withTimeout(this.mdns.deregister(), 2000);
       } catch (err) {
-         this.emit('shutdown-error', {
-      phase: 'mdns.deregister',
-      error: err
-    });
-      }
+  this.emit('shutdown-error', {
+    phase: 'mdns.deregister',
+    error: err
+  });
+
+  if (process.stderr && typeof process.stderr.write === 'function') {
+    process.stderr.write(
+      `[shutdown-error] mdns.deregister: ${err.stack || err}\n`
+    );
+  }
+}
     }
 
     // 4. Call server.shutdown() — await with 3s timeout
@@ -180,11 +186,17 @@ class LifecycleManager extends EventEmitter {
       try {
         await this._withTimeout(this.server.shutdown(), 3000);
       } catch (err) {
-         this.emit('shutdown-error', {
-      phase: 'server.shutdown',
-      error: err
-    });
-      }
+  this.emit('shutdown-error', {
+    phase: 'server.shutdown',
+    error: err
+  });
+
+  if (process.stderr && typeof process.stderr.write === 'function') {
+    process.stderr.write(
+      `[shutdown-error] server.shutdown: ${err.stack || err}\n`
+    );
+  }
+}
     }
 
     // Close any tracked file streams
