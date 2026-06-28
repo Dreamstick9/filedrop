@@ -49,4 +49,56 @@ test('Lifecycle Manager', async (t) => {
       }
     }
   });
+
+  await t.test('emits shutdown-error when mdns.deregister times out', async () => {
+  const errors = [];
+
+  const lm = new LifecycleManager({
+    mdns: {
+      deregister() {
+        return new Promise(() => {}); // never resolves
+      }
+    }
+  });
+
+  lm.on('shutdown-error', (event) => {
+    errors.push(event);
+  });
+
+  if (process.stderr) {
+    t.mock.method(process.stderr, 'write', () => true);
+  }
+
+  await lm.exitCleanly(0);
+
+  assert.strictEqual(errors.length, 1);
+  assert.strictEqual(errors[0].phase, 'mdns.deregister');
+  assert.ok(errors[0].error instanceof Error);
+});
+
+  await t.test('emits shutdown-error when server.shutdown times out', async () => {
+  const errors = [];
+
+  const lm = new LifecycleManager({
+    server: {
+      shutdown() {
+        return new Promise(() => {}); // never resolves
+      }
+    }
+  });
+
+  lm.on('shutdown-error', (event) => {
+    errors.push(event);
+  });
+
+  if (process.stderr) {
+    t.mock.method(process.stderr, 'write', () => true);
+  }
+
+  await lm.exitCleanly(0);
+
+  assert.strictEqual(errors.length, 1);
+  assert.strictEqual(errors[0].phase, 'server.shutdown');
+  assert.ok(errors[0].error instanceof Error);
+});
 });
