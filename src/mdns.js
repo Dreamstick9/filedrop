@@ -128,7 +128,10 @@ async function probe(instance, name, maxSuffix = 10) {
           questions: [{ name: candidateService, type: 'ANY' }]
         });
       } catch (e) {
-        // Query failed (e.g., socket closed), safely assume no conflict to proceed
+        instance.removeListener('response', onResponse);
+        console.warn(`[filedrop:mDNS] probe query failed for "${candidateService}": ${e.message}`);
+        resolve(candidate);
+        return;
       }
 
       setTimeout(() => {
