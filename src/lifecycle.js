@@ -44,6 +44,15 @@ class LifecycleManager extends EventEmitter {
   }
 
   registerFileStream(stream) {
+    if (this.exitStarted) {
+      // Shutdown already in progress — don't track it, just destroy it
+      // immediately so it can't leak past cleanup.
+      if (stream && typeof stream.destroy === 'function') {
+        stream.destroy();
+      }
+      return;
+    }
+
     this.fileStreams.add(stream);
     stream.on('close', () => {
       this.fileStreams.delete(stream);
@@ -187,8 +196,13 @@ class LifecycleManager extends EventEmitter {
       }
     }
 
-    // Close any tracked file streams
-    for (const stream of this.fileStreams) {
+    // Close any tracked file streams.
+    // Snapshot the Set first — destroy() can trigger the 'close' handler
+    // synchronously/early in some stream implementations, which deletes
+    // from this.fileStreams. Iterating a live Set while it's being mutated
+    // can skip entries, so we iterate a static copy instead.
+    const streamsToDestroy = Array.from(this.fileStreams);
+    for (const stream of streamsToDestroy) {
       if (stream && typeof stream.destroy === 'function') {
         stream.destroy();
       }

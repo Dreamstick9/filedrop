@@ -49,4 +49,20 @@ test('Lifecycle Manager', async (t) => {
       }
     }
   });
+  await t.test('Streams registered after exitStarted are destroyed immediately', async () => {
+    const lm = new LifecycleManager();
+    lm.exitStarted = true; // simulate shutdown already begun
+
+    let destroyed = false;
+    const fakeStream = {
+      on: () => {},
+      destroy: () => { destroyed = true; }
+    };
+
+    lm.registerFileStream(fakeStream);
+
+    assert.strictEqual(destroyed, true);
+    assert.strictEqual(lm.fileStreams.has(fakeStream), false);
+  });
+
 });
