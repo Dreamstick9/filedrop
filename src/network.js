@@ -122,7 +122,7 @@ function getInterface(options = {}) {
             try {
                 // Try to resolve GUIDs to friendly names using wmic (only in verbose mode)
                 const wmicOutput = execSync('wmic nic get GUID,NetConnectionID /format:csv', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-                const lines = wmicOutput.split('\\n');
+                const lines = wmicOutput.split('/\r?\n/');
                 const guidMap = {};
                 for (const line of lines) {
                     const parts = line.trim().split(',');
