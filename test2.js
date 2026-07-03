@@ -24,6 +24,10 @@ function httpClient(url, options = {}) {
 
 async function run() {
   const filePath = createTempFile(1024, '.txt');
+const tempFileName = 'temp.txt';
+fs.writeFileSync(tempFileName, 'temp content');
+// ... rest of the code
+fs.unlinkSync(tempFileName);
   let transferCompleted = false;
 
   const { server, shutdown } = await createServer({
