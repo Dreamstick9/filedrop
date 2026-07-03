@@ -2,6 +2,9 @@ const { createServer } = require('./src/server.js');
 const fs = require('fs');
 const http = require('http');
 const { createTempFile, cleanupTempFiles } = require('./test/helpers/create-temp-file.js');
+// Use cleanupTempFiles after shutdown
+await shutdown();
+cleanupTempFiles();
 
 function httpClient(url, options = {}) {
   return new Promise((resolve, reject) => {
@@ -24,10 +27,6 @@ function httpClient(url, options = {}) {
 
 async function run() {
   const filePath = createTempFile(1024, '.txt');
-const tempFileName = 'temp.txt';
-fs.writeFileSync(tempFileName, 'temp content');
-// ... rest of the code
-fs.unlinkSync(tempFileName);
   let transferCompleted = false;
 
   const { server, shutdown } = await createServer({
