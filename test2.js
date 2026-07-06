@@ -15,9 +15,7 @@ const { createTempFile } = require('./test/helpers/create-temp-file.js');
 if (typeof createTempFile !== 'function') {
   console.warn('createTempFile imported but never used');
 }
-// Use cleanupTempFiles after shutdown
-await shutdown();
-cleanupTempFiles();
+const { createTempFile, cleanupTempFiles } = require('./test/helpers/create-temp-file.js');
 
 function httpClient(url, options = {}) {
   return new Promise((resolve, reject) => {
