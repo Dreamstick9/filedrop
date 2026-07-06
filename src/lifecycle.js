@@ -168,7 +168,18 @@ class LifecycleManager extends EventEmitter {
       try {
         await this._withTimeout(this.mdns.deregister(), 2000);
       } catch (err) {
-  this.emit('shutdown-error', {
+      } catch (err) {
+        this.emit('shutdown-error', {
+          phase: 'mdns.deregister',
+          error: err
+        });
+
+        if (process.stderr && typeof process.stderr.write === 'function') {
+          process.stderr.write(
+            `[shutdown-error] mdns.deregister: ${err.stack || err}\n`
+          );
+        }
+      }
     phase: 'mdns.deregister',
     error: err
   });
