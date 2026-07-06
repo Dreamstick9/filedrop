@@ -1,7 +1,20 @@
 const { createServer } = require('./src/server.js');
 const fs = require('fs');
 const http = require('http');
-const { createTempFile, cleanupTempFiles } = require('./test/helpers/create-temp-file.js');
+// Use cleanupTempFiles after shutdown
+await shutdown();
+try {
+  cleanupTempFiles();
+} catch (err) {
+  console.error('temp file cleanup failed:', err);
+  process.exitCode = 1;
+}
+
+// Also: dead import
+const { createTempFile } = require('./test/helpers/create-temp-file.js');
+if (typeof createTempFile !== 'function') {
+  console.warn('createTempFile imported but never used');
+}
 // Use cleanupTempFiles after shutdown
 await shutdown();
 cleanupTempFiles();
