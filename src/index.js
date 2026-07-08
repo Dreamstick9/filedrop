@@ -14,27 +14,21 @@ const qr = require('./qr');
 
 /**
  * Assumed module interfaces:
- * 
- * network.js:
- *   getInterface(bindIp: string): Promise<string>
- * 
- * port.js:
- *   findAvailablePort(startPort: number, endPort: number): Promise<number>
- * 
- * mdns.js:
- *   announce(options: { name: string, port: number, txt: object }): Promise<void>
- *   teardown(): Promise<void>
- * 
- * server.js:
- *   createServer(options: { filePath: string, port: number, options: object, onTransferStart: () => void, onTransferComplete: () => void, onTransferError: (err: Error) => void }): { shutdown: () => Promise<void>, start: () => Promise<void> }
- * 
- * qr.js:
- *   generateQR(url: string, mode: string): string
- * 
- * ui.js:
- *   renderStart(metadata: object): void
- *   updateStatus(status: string): void
- *   renderSuccess(): void
+ * * network.js:
+ * getInterface(bindIp: string): Promise<string>
+ * * port.js:
+ * findAvailablePort(startPort: number, endPort: number): Promise<number>
+ * * mdns.js:
+ * announce(options: { name: string, port: number, txt: object }): Promise<void>
+ * teardown(): Promise<void>
+ * * server.js:
+ * createServer(options: { filePath: string, port: number, options: object, onTransferStart: () => void, onTransferComplete: () => void, onTransferError: (err: Error) => void }): { shutdown: () => Promise<void>, start: () => Promise<void> }
+ * * qr.js:
+ * generateQR(url: string, mode: string): string
+ * * ui.js:
+ * renderStart(metadata: object): void
+ * updateStatus(status: string): void
+ * renderSuccess(): void
  */
 
 async function main() {
@@ -66,9 +60,6 @@ async function main() {
     console.error(`filedrop: error: ${err.message || 'Port exhausted'}`);
     process.exit(3);
   }
-
-  // url and filename will be constructed after server creation
-  // so we can get the encryption key and attach it to the URL.
 
   let clipboardData = null;
   let filename;
@@ -123,6 +114,9 @@ async function main() {
 
   let isTransferring = false;
   let timeoutHandle;
+  
+  // Keep upper-scope box width tracker
+  let calculatedBoxWidth = 43;
 
   const readline = require('readline').createInterface({ input: process.stdin, output: process.stdout });
   const limit = await new Promise(resolve => {
@@ -151,13 +145,13 @@ async function main() {
       isTransferring = true;
       clearTimeout(timeoutHandle); // reset/cancel connection timeout
       if (limit > 1) {
-        qr.updateStatus(`transferring (${currentCount}/${limit})`, { color: config.color });
+        qr.updateStatus(`transferring (${currentCount}/${limit})`, { color: config.color }, calculatedBoxWidth);
       } else {
-        qr.updateStatus('transferring', { color: config.color });
+        qr.updateStatus('transferring', { color: config.color }, calculatedBoxWidth);
       }
     },
     onTransferComplete: (completedCount, downloadLimit) => {
-      qr.updateStatus(`Downloads: ${completedCount} / ${downloadLimit}`, { color: config.color });
+      qr.updateStatus(`Downloads: ${completedCount} / ${downloadLimit}`, { color: config.color }, calculatedBoxWidth);
       if (completedCount >= downloadLimit) {
         isTransferring = false;
         transferCompleteResolve();
@@ -173,9 +167,10 @@ async function main() {
     }
   });
 
+  // Construct the absolute exact server URL using the real key returned by createServer
   const url = `http://${ip}:${port}/#${keyHex}`;
 
-  // 7. Render and print QR code + metadata box
+  // 7. Render and print QR code + metadata box AFTER createServer to safely use the real keyHex
   if (config.qr) {
     const qrString = qr.renderQR(url, { compact: config.qrCompact, noQr: false, color: config.color });
     console.log(qrString);
@@ -186,7 +181,10 @@ async function main() {
       } else {
         sizeDisplay = config.isDirectory ? '(streaming zip)' : config.fileSize + ' bytes';
       }
-      console.log(qr.renderMetadataBox(filename, sizeDisplay, url, config.mdns ? mdnsName : null, { color: config.color }));
+      
+      const { output, boxWidth } = qr.renderMetadataBox(filename, sizeDisplay, url, config.mdns ? mdnsName : null, { color: config.color });
+      calculatedBoxWidth = boxWidth;
+      console.log(output);
     }
   } else {
     console.log(`URL: ${url}`);
@@ -254,7 +252,7 @@ async function main() {
     clearTimeout(timeoutHandle);
     
     // 11. Update terminal status line
-    qr.updateStatus('done', { color: config.color });
+    qr.updateStatus('done', { color: config.color }, calculatedBoxWidth);
     
     // 12. Deregister mDNS
     if (config.mdns && mdns.teardown) {
