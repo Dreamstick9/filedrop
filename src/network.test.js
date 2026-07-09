@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const os = require('os');
-const { getInterface } = require('./network.js');
+const { getInterface, getFilterReason } = require('./network.js');
 
 test('Network Interface Discovery', async (t) => {
     const originalNetworkInterfaces = os.networkInterfaces;
@@ -40,6 +40,33 @@ test('Network Interface Discovery', async (t) => {
         const result = getInterface();
         assert.strictEqual(result.name, 'en0');
         assert.strictEqual(result.info.address, '192.168.1.10');
+    });
+
+    await t.test('Docker bridge filter includes wider default subnet', () => {
+        const reason = getFilterReason('docker0', { address: '172.17.42.1', family: 'IPv4', internal: false });
+
+        assert.strictEqual(reason, 'Docker bridge');
+    });
+
+    await t.test('Docker bridge filter includes user-defined bridge networks', () => {
+        os.networkInterfaces = () => ({
+            en0: [{ address: '10.0.0.5', family: 'IPv4', internal: false }],
+            'br-123abc': [{ address: '172.18.0.1', family: 'IPv4', internal: false }]
+        });
+
+        const result = getInterface();
+        assert.strictEqual(result.name, 'en0');
+        assert.strictEqual(result.info.address, '10.0.0.5');
+    });
+
+    await t.test('172.16/12 LAN addresses remain usable on non-Docker interfaces', () => {
+        os.networkInterfaces = () => ({
+            en0: [{ address: '172.20.1.25', family: 'IPv4', internal: false }]
+        });
+
+        const result = getInterface();
+        assert.strictEqual(result.name, 'en0');
+        assert.strictEqual(result.info.address, '172.20.1.25');
     });
 
     await t.test('Machine with VPN + Ethernet', (t) => {
