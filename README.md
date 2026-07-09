@@ -84,3 +84,7 @@ Pull requests are welcome. For major changes, please open an issue first to disc
 ## License
 
 MIT
+# Miku test
+
+This is a throwaway test PR to verify Miku's star-gate and auto-assign behavior.
+
