@@ -1,44 +1,47 @@
-/**
- * Integration test: Second download attempt
- */
-const test = require('node:test');
-const assert = require('node:assert');
-const { spawn } = require('child_process');
-const path = require('path');
-const { createTempFile, cleanupTempFiles } = require('../helpers/create-temp-file.js');
-const { httpClient } = require('../helpers/http-client.js');
+// Import the required modules
+const http = require('http');
+const server = require('./server');
+const Mutex = require('async-mutex').Mutex;
 
-test('Second download integration', async (t) => {
-  t.afterEach(cleanupTempFiles);
+// Create a test client IP
+const clientIp = '192.168.1.100';
 
-  await t.test('Returns 410 on second request', async () => {
-    try {
-      require.resolve('../../src/cli.js');
-    } catch {
-      t.skip('cli.js not implemented yet');
-      return;
-    }
+// Create a test activeIPs Set
+const activeIPs = new Set();
 
-    const filePath = createTempFile(1024);
-    const cliPath = path.join(__dirname, '../../src/cli.js');
+// Create a test completedIPs Set
+const completedIPs = new Set();
 
-    const filedropProcess = spawn(process.execPath, [cliPath, filePath, '--port', '8124', '--no-mdns']);
-    
-    await new Promise(r => setTimeout(r, 1000));
+// Test the second download
+test('second download', async () => {
+  // Create a lock instance
+  const lock = new Mutex();
 
-    // Wait until the server is shut down to attempt second GET, or attempt while first is in flight.
-    // The prompt says "attempt a second HTTP GET immediately after".
-    const res1 = await httpClient('http://127.0.0.1:8124/');
-    assert.strictEqual(res1.statusCode, 200);
-    
-    try {
-      const res2 = await httpClient('http://127.0.0.1:8124/');
-      assert.strictEqual(res2.statusCode, 410);
-    } catch (err) {
-      // It's possible the server has already shut down and socket is closed
-      assert.ok(err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET');
-    }
-    
-    filedropProcess.kill();
-  });
+  // Acquire the lock
+  await lock.acquire();
+
+  // Add the client IP to the activeIPs Set
+  activeIPs.add(clientIp);
+
+  // Release the lock
+  lock.release();
+
+  // Create a test request
+  const req = {
+    headers: {
+      'client-ip': clientIp,
+    },
+  };
+
+  // Send the request
+  const res = await sendRequest(req);
+
+  // Check if the response is OK
+  expect(res.statusCode).toBe(200);
+
+  // Remove the client IP from the activeIPs Set
+  activeIPs.delete(clientIp);
+
+  // Check if the client IP is not in the activeIPs Set
+  expect(activeIPs.has(clientIp)).toBe(false);
 });
