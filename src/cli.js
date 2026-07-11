@@ -4,7 +4,9 @@ const path = require('path');
 
 const pkg = require('../package.json');
 const VERSION = pkg.version;
-
+const REPOSITORY_URL = pkg.repository.url
+  .replace(/^git\+/, '')
+  .replace(/\.git$/, '');
 function printHelp() {
   console.log(`filedrop — instant local file & folder transfer via QR code
 
@@ -37,7 +39,7 @@ Options:
   --version              Print version and exit
   --help, -h             Print help and exit
 
-filedrop v${VERSION} — https://github.com/<org>/filedrop`);
+filedrop v${VERSION} — ${REPOSITORY_URL}`);
 }
 
 function parseArgs(argv) {
