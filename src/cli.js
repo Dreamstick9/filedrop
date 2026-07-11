@@ -4,7 +4,12 @@ const path = require('path');
 
 const pkg = require('../package.json');
 const VERSION = pkg.version;
-const REPOSITORY_URL = pkg.repository.url
+const repositoryUrl =
+  typeof pkg.repository === 'string'
+    ? pkg.repository
+    : pkg.repository?.url || '';
+
+const REPOSITORY_URL = repositoryUrl
   .replace(/^git\+/, '')
   .replace(/\.git$/, '');
 function printHelp() {
