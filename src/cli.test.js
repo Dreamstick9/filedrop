@@ -5,7 +5,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { parseArgs } = require('./cli.js');
 const { createTempFile, cleanupTempFiles } = require('../test/helpers/create-temp-file.js');
-const { execSync } = require('node:child_process');
+const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 
 test('CLI Parser', async (t) => {
