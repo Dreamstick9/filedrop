@@ -195,9 +195,7 @@ async function createServer({
         if (!response.ok) {
           setStatus("Error: Link Expired");
           setClipText("Error: Link expired or already copied.");
-          if (${isClipboard}) {
-            window.close();
-          }
+          ${isClipboard ? 'window.close();' : ''}
           return;
         }
 
@@ -349,9 +347,7 @@ async function createServer({
         setClipText("Error: Decryption failed or link expired.");
         if (statusEl) statusEl.style.color = "#FF453A";
         console.error(err);
-        if (${isClipboard}) {
-          window.close();
-        }
+        ${isClipboard ? 'window.close();' : ''}
       }
     })();
   </script>
