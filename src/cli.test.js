@@ -13,7 +13,7 @@ test('CLI Parser', async (t) => {
 
   await t.test('Help text includes --qr / --no-qr flags', () => {
     const binPath = path.join(__dirname, '..', 'bin', 'filedrop.js');
-    const stdout = execSync(`node "${binPath}" --help`).toString();
+    const stdout = execFileSync(process.execPath, [binPath, '--help']).toString();
     assert.match(stdout, /--qr \/ --no-qr/);
   });
 
