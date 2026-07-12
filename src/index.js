@@ -169,7 +169,8 @@ async function main() {
       transferId: transferId,
       ip: ip,
       port: port,
-      verbose: config.verbose
+      verbose: config.verbose,
+      mdnsTimeout: config.mdnsTimeout
     }).catch(err => {
       // fire and forget with error callback
       if (config.verbose) {

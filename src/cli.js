@@ -19,7 +19,8 @@ const {
   DEFAULT_SHUTDOWN_GRACE_MS,
   DEFAULT_RATE_LIMIT_WINDOW_MS,
   DEFAULT_RATE_LIMIT_MAX,
-  DEFAULT_MAX_CONNECTIONS
+  DEFAULT_MAX_CONNECTIONS,
+  DEFAULT_MDNS_TIMEOUT_MS
 } = require('./constants');
 const { MIN_PORT, MAX_PORT } = require('./port');
 
@@ -49,6 +50,8 @@ Options:
                          Rate limit window in milliseconds (default: ${DEFAULT_RATE_LIMIT_WINDOW_MS})
   --rate-limit-max <n>   Max requests per IP per window (default: ${DEFAULT_RATE_LIMIT_MAX})
   -n, --name <name>      Override mDNS service name
+  --mdns-timeout <ms>    Milliseconds to wait for Windows mDNS registration
+                         before giving up (default: ${DEFAULT_MDNS_TIMEOUT_MS})
   --qr / --no-qr         Show or hide the QR code (default: show)
   --qr-compact           Print QR code without surrounding metadata box
   --no-mdns              Disable mDNS broadcasting
@@ -64,7 +67,7 @@ filedrop v${VERSION} — ${REPOSITORY_URL}`);
 function parseArgs(argv) {
   const args = minimist(argv.slice(2), {
     boolean: ['qr-compact', 'verbose', 'version', 'help', 'qr', 'mdns', 'clipboard', 'warn-sensitive'],
-    string: ['port', 'bind', 'timeout', 'rate-limit-window', 'rate-limit-max', 'name', 'color', 'shutdown-grace-ms', 'token', 'max-connections'],
+    string: ['port', 'bind', 'timeout', 'rate-limit-window', 'rate-limit-max', 'name', 'color', 'shutdown-grace-ms', 'token', 'max-connections', 'mdns-timeout'],
     alias: {
       p: 'port',
       b: 'bind',
@@ -82,7 +85,8 @@ function parseArgs(argv) {
       'rate-limit-window': String(DEFAULT_RATE_LIMIT_WINDOW_MS),
       'rate-limit-max': String(DEFAULT_RATE_LIMIT_MAX),
       'shutdown-grace-ms': String(DEFAULT_SHUTDOWN_GRACE_MS),
-      'max-connections': String(DEFAULT_MAX_CONNECTIONS)
+      'max-connections': String(DEFAULT_MAX_CONNECTIONS),
+      'mdns-timeout': String(DEFAULT_MDNS_TIMEOUT_MS)
     }
   });
 
@@ -214,6 +218,14 @@ function parseArgs(argv) {
     process.exit(1);
   }
 
+  const mdnsTimeoutArg = args['mdns-timeout'];
+  const mdnsTimeout = Number(mdnsTimeoutArg);
+  if (!/^\d+$/.test(mdnsTimeoutArg) || !Number.isSafeInteger(mdnsTimeout) || mdnsTimeout <= 0 || mdnsTimeout > 2147483647) {
+    console.error('filedrop: error: --mdns-timeout must be a positive integer no greater than 2147483647');
+    console.error("Run 'filedrop --help' for usage.");
+    process.exit(1);
+  }
+
   let token = null;
   if (args.token !== undefined) {
     if (args.token === '') {
@@ -243,6 +255,7 @@ function parseArgs(argv) {
     qr: args.qr,
     qrCompact: args['qr-compact'],
     mdns: args.mdns,
+    mdnsTimeout,
     verbose: args.verbose,
     color: args.color
   };

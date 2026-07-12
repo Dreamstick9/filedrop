@@ -13,6 +13,7 @@
 const os = require('os');
 const path = require('path');
 const mDNS = require('multicast-dns');
+const { DEFAULT_MDNS_TIMEOUT_MS } = require('./constants');
 
 function createSession() {
   return {
@@ -178,6 +179,10 @@ async function probe(instance, name, maxSuffix = 10) {
 /**
  * Announces the service via mDNS
  * @param {Object} config
+ * @param {number} [config.mdnsTimeout] - Milliseconds to wait for Windows mDNS
+ *   registration to complete before treating it as failed (default: DEFAULT_MDNS_TIMEOUT_MS,
+ *   currently 1000ms). Only used on Windows, where mDNS registration has no reliable
+ *   success signal.
  * @returns {Promise<{ name: string, mdnsAvailable: boolean }>}
  */
 async function announce(config) {
@@ -239,9 +244,10 @@ async function announce(config) {
     instance.on('error', handleError);
 
     if (isWin) {
+      const mdnsTimeout = config.mdnsTimeout || DEFAULT_MDNS_TIMEOUT_MS;
       winTimeout = setTimeout(() => {
         handleError(new Error('Windows registration timeout'));
-      }, 1000);
+      }, mdnsTimeout);
     }
 
     let baseServiceName = config.mdnsName || config.mdnsNameOverride || generateBaseName(config.filename);
