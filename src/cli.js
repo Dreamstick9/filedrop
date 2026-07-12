@@ -43,7 +43,7 @@ Options:
                          Rate limit window in milliseconds (default: ${DEFAULT_RATE_LIMIT_WINDOW_MS})
   --rate-limit-max <n>   Max requests per IP per window (default: ${DEFAULT_RATE_LIMIT_MAX})
   -n, --name <name>      Override mDNS service name
-  --no-qr                Suppress QR code, print URL only
+  --qr / --no-qr         Show or hide the QR code (default: show)
   --qr-compact           Print QR code without surrounding metadata box
   --no-mdns              Disable mDNS broadcasting
   --clipboard            Share system clipboard contents

@@ -56,7 +56,7 @@ filedrop --clipboard                # share your clipboard contents
 | `-m, --mdns` | Broadcast the file over the local network via mDNS |
 | `-t, --timeout <s>` | Seconds to wait for a connection (default: 300) |
 | `--clipboard` | Share clipboard contents instead of a file |
-| `--no-qr` | Suppress QR code, print URL only |
+| `--qr / --no-qr` | Show or hide the QR code (default: show) |
 | `--qr-compact` | Print QR code without surrounding metadata box |
 | `--color <color>` | Override terminal theme color (e.g., cyan, red, green) |
 | `--verbose, -v` | Verbose output (log all decisions) |

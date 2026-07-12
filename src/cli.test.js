@@ -5,9 +5,17 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { parseArgs } = require('./cli.js');
 const { createTempFile, cleanupTempFiles } = require('../test/helpers/create-temp-file.js');
+const { execSync } = require('node:child_process');
+const path = require('node:path');
 
 test('CLI Parser', async (t) => {
   t.afterEach(cleanupTempFiles);
+
+  await t.test('Help text includes --qr / --no-qr flags', () => {
+    const binPath = path.join(__dirname, '..', 'bin', 'filedrop.js');
+    const stdout = execSync(`node "${binPath}" --help`).toString();
+    assert.match(stdout, /--qr \/ --no-qr/);
+  });
 
   await t.test('Parses custom rate limit options', () => {
     const filePath = createTempFile(1024, '.txt');
