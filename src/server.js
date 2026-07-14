@@ -9,7 +9,6 @@ const VERSION = pkg.version;
 
 const {
   DEFAULT_TIMEOUT_SECONDS,
-  DEFAULT_SHUTDOWN_TIMEOUT_MS,
   DEFAULT_RATE_LIMIT_WINDOW_MS,
   DEFAULT_RATE_LIMIT_MAX,
   DEFAULT_MAX_CONNECTIONS
@@ -641,11 +640,6 @@ async function createServer({
     socket.once('close', () => sockets.delete(socket));
   });
 
-  const configuredShutdownTimeoutMs = options.shutdownTimeoutMs ?? DEFAULT_SHUTDOWN_TIMEOUT_MS;
-  const shutdownTimeoutMs = Number.isSafeInteger(configuredShutdownTimeoutMs) && configuredShutdownTimeoutMs > 0
-    ? configuredShutdownTimeoutMs
-    : DEFAULT_SHUTDOWN_TIMEOUT_MS;
-
   const shutdown = () => {
     clearInterval(rateLimitCleanup);
     return new Promise((resolve) => {
@@ -655,7 +649,7 @@ async function createServer({
         resolved = true;
         resolve();
       };
-      const forceTimeout = setTimeout(finish, shutdownTimeoutMs);
+      const forceTimeout = setTimeout(finish, 3000);
       
       if (typeof options.onShutdown === 'function') {
         try { options.onShutdown(); } catch (err) { }

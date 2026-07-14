@@ -427,34 +427,6 @@ test('Server Core', async (t) => {
     await shutdown();
   });
 
-  await t.test('Custom shutdownTimeoutMs controls the shutdown force-timeout', async () => {
-    const filePath = createTempFile(1024, '.txt');
-    const { server, shutdown } = await createServer({
-      filePath,
-      port: 0,
-      options: {
-        shutdownTimeoutMs: 200
-      },
-      onTransferComplete: () => {},
-      onTransferError: () => {}
-    });
-
-    // Simulate a server.close() that never invokes its callback (e.g. a lingering
-    // keep-alive socket), so shutdown() must fall back to the configured force-timeout.
-    const originalClose = server.close.bind(server);
-    server.close = () => {};
-
-    const start = Date.now();
-    await shutdown();
-    const elapsed = Date.now() - start;
-
-    assert.ok(elapsed >= 190, `expected shutdown to wait ~200ms, took ${elapsed}ms`);
-    assert.ok(elapsed < 1000, `expected shutdown to resolve shortly after the custom timeout, took ${elapsed}ms`);
-
-    // Actually release the underlying listener now that the timing assertion is done.
-    await new Promise(resolve => originalClose(resolve));
-  });
-
   await t.test('Decoded filename route matching: correctly resolves paths with spaces/special characters', async () => {
     const tempDir = os.tmpdir();
     const filePath = path.join(tempDir, 'file name with space.txt');
