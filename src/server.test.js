@@ -30,6 +30,7 @@ test('Server Core', async (t) => {
 
     assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(res.headers['content-type'], 'text/html; charset=utf-8');
+    assert.strictEqual(res.headers['referrer-policy'], 'no-referrer');
     assert.ok(res.body.toString().includes('<!DOCTYPE html>'));
 
     await shutdown();

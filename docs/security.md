@@ -24,7 +24,7 @@ To prevent accidental or unauthorized multi-client downloads:
 - **Sensitive File Warning**: By default, `filedrop` checks filenames against heuristics (e.g. `*.pem`, `*.key`, `*.env`, `id_rsa`, `credentials`) and prompts before serving them. You can bypass this warning with `--no-warn-sensitive`.
 - **`--token [token]`**: Gates access to the share links using a token parameter (`?t=<token>`). If the option is passed without a value, a random 16-character hex token is generated.
   > [!WARNING]
-  > **Token Security Tradeoff**: Because this is a zero-JS-framework flow, the token query parameter is sent in the HTTP request line. This means it will appear in server/proxy logs, browser history, and outbound `Referer` headers.
+  > **Token Security Tradeoff**: Because this is a zero-JS-framework flow, the token query parameter is sent in the HTTP request line. This means it will appear in server/proxy logs, browser history, and outbound `Referer` headers.The server sets the `Referrer-Policy: no-referrer` header on the decryptor HTML response to prevent transfer tokens from being leaked via the `Referer` header.
 - **`--max-connections <n>`**: Restricts concurrent TCP connections to the server to prevent socket flooding (default: 10, set to 0 to disable).
 
 *For more details on the complete threat model and mitigation of path traversals or DOS flooding, check the internal specifications.*
