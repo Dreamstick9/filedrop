@@ -15,18 +15,21 @@ const {
 test('Platform Utilities', async (t) => {
   // Helper to stub process.platform
   function stubPlatform(t, val) {
-    const originalPlatform = process.platform;
+    if (!('__originalPlatform' in t)) {
+      t.__originalPlatform = process.platform;
+      t.after(() => {
+        Object.defineProperty(process, 'platform', {
+          value: t.__originalPlatform,
+          writable: true,
+          configurable: true
+        });
+      });
+    }
+
     Object.defineProperty(process, 'platform', {
       value: val,
       writable: true,
       configurable: true
-    });
-    t.after(() => {
-      Object.defineProperty(process, 'platform', {
-        value: originalPlatform,
-        writable: true,
-        configurable: true
-      });
     });
   }
 
