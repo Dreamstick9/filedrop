@@ -18,22 +18,25 @@ const { SignalingRoom } = require("./signaling");
 const { pickTransport } = require("./transport");
 
 /**
- * Assumed module interfaces:
- * * network.js:
- * getInterface(bindIp: string): Promise<string>
- * * port.js:
- * findAvailablePort(startPort: number, endPort: number): Promise<number>
- * * mdns.js:
- * announce(options: { name: string, port: number, txt: object }): Promise<void>
- * teardown(): Promise<void>
- * * server.js:
- * createServer(options: { filePath: string, port: number, options: object, onTransferStart: () => void, onTransferComplete: () => void, onTransferError: (err: Error) => void }): { shutdown: () => Promise<void>, start: () => Promise<void> }
- * * qr.js:
- * generateQR(url: string, mode: string): string
- * * ui.js:
- * renderStart(metadata: object): void
- * updateStatus(status: string): void
- * renderSuccess(): void
+ * Module interfaces:
+ *
+ * network.js:
+ *   getInterface(options?: { bind?: string, verbose?: boolean }): { name: string, info: os.NetworkInterfaceInfo }
+ *
+ * port.js:
+ *   findAvailablePort(startPort?: number, endPort?: number): Promise<number>
+ *
+ * mdns.js:
+ *   announce(config: { mdnsName: string, filename: string, size: number, transferId: string, ip: string, port: number, verbose?: boolean }): Promise<{ name: string, mdnsAvailable: boolean }>
+ *   deregister(): Promise<void>
+ *
+ * server.js:
+ *   createServer(options: { filePath: string, port: number, options: object, onTransferStart: () => void, onTransferComplete: () => void, onTransferError: (err: Error) => void }): Promise<{ server: http.Server, shutdown: () => Promise<void>, keyHex: string, downloadPath: string }>
+ *
+ * qr.js:
+ *   renderQR(url: string, options?: object): string
+ *   renderMetadataBox(filename: string, sizeHuman: string, url: string, mdnsName: string, options?: object): void
+ *   updateStatus(status: string, options?: object): void
  */
 
 const { LifecycleManager, STATES } = require('./lifecycle');
