@@ -101,6 +101,7 @@ async function createServer({
   const encodedFileName = encodeURIComponent(fileName)
     .replace(/['()]/g, escape)
     .replace(/\*/g, '%2A');
+  const safeFileName = sanitizeDownloadFileName(fileName);
   const contentDisposition = `attachment; filename="${safeFileName}"; filename*=UTF-8''${encodedFileName}`;
 
   const version = options.version || VERSION;
