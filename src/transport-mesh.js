@@ -146,6 +146,9 @@ class MeshTransport {
             clearTimeout(this.iceTimer);
             this.iceTimer = null;
           }
+          if (this.relayActive) {
+            this.handleError(new Error('Peer disconnected during relay transfer.'));
+          }
           return;
         }
 
@@ -177,6 +180,16 @@ class MeshTransport {
       console.log('[filedrop:mesh] ICE connection timed out.');
     }
 
+    if (!this.peerJoined) {
+      this.handleError(new Error('Peer disconnected before relay fallback could start.'));
+      return;
+    }
+
+    if (!this.ws || this.ws.readyState !== 1) { // 1 = WebSocket.OPEN
+      this.handleError(new Error('Signaling socket is closed.'));
+      return;
+    }
+
     if (!this.relay) {
       this.handleError(new Error('ICE connection failed and relay fallback is disabled.'));
       return;
@@ -193,6 +206,11 @@ class MeshTransport {
   async startRelayStream() {
     if (this.verbose) {
       console.log('[filedrop:mesh] Starting ciphertext relay stream...');
+    }
+
+    if (!this.ws || this.ws.readyState !== 1) {
+      this.handleError(new Error('Signaling socket is closed.'));
+      return;
     }
 
     let fileSize = null;
