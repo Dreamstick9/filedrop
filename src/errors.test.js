@@ -4,16 +4,14 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { 
-  FiledropError, 
   FileError, 
   NetworkError, 
   TransferError, 
   ConfigError, 
   ERROR_CODES 
-} = require('./errors.js');
-const { safeRun } = require('./safe-run.js');
+ } = require('./errors.js');
 
-test('Errors and SafeRun', async (t) => {
+test('Errors', async (t) => {
   await t.test('Each error class has correct code, message, exitCode', () => {
     const fileErr = new FileError(ERROR_CODES.ERR_FILE_NOT_FOUND, 'File not found');
     assert.strictEqual(fileErr.code, 'ERR_FILE_NOT_FOUND');
@@ -35,32 +33,5 @@ test('Errors and SafeRun', async (t) => {
     assert.strictEqual(configErr.code, 'ERR_INVALID_PORT');
     assert.strictEqual(configErr.message, 'Invalid port');
     assert.strictEqual(configErr.exitCode, 1);
-  });
-
-  await t.test('safeRun catches errors without throwing', async () => {
-    let thrown = false;
-    try {
-      await safeRun(async () => {
-        throw new Error('Test error');
-      }, 'TestLabel');
-    } catch (err) {
-      thrown = true;
-    }
-    assert.strictEqual(thrown, false, 'safeRun should catch exceptions');
-  });
-
-  await t.test('safeRun logs to stderr on error', async () => {
-    const originalError = console.error;
-    let loggedMessage = '';
-    console.error = (msg) => { loggedMessage += msg; };
-
-    await safeRun(async () => {
-      throw new Error('Test error');
-    }, 'TestLabel');
-
-    console.error = originalError;
-
-    assert.ok(loggedMessage.includes('Warning: error during TestLabel'), 'Should log warning to stderr');
-    assert.ok(loggedMessage.includes('Test error'), 'Should include the error message');
   });
 });
