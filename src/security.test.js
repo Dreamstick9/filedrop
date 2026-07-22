@@ -1,58 +1,118 @@
+/**
+ * src/security.test.js
+ * Unit tests for security helper module (validateToken, createConnectionLimiter, isSensitiveFile, confirmSensitiveFile).
+ */
 const test = require('node:test');
 const assert = require('node:assert');
-const { validateToken, createConnectionLimiter, isSensitiveFile } = require('./security');
+const EventEmitter = require('node:events');
+const readline = require('node:readline');
+const {
+  validateToken,
+  createConnectionLimiter,
+  isSensitiveFile,
+  confirmSensitiveFile
+} = require('./security.js');
 
 test('Security Helpers', async (t) => {
-  await t.test('validateToken', () => {
-    // True when no token required
-    assert.strictEqual(validateToken('http://localhost/', null), true);
-    assert.strictEqual(validateToken('http://localhost/', undefined), true);
-    assert.strictEqual(validateToken('http://localhost/', ''), true);
-
-    // Matches valid token in query param
-    assert.strictEqual(validateToken('http://localhost/?t=mysecret', 'mysecret'), true);
-    // Fails on mismatched token
-    assert.strictEqual(validateToken('http://localhost/?t=wrong', 'mysecret'), false);
-    // Fails when token query parameter is missing
-    assert.strictEqual(validateToken('http://localhost/', 'mysecret'), false);
+  await t.test('validateToken: allows request when no token is required', () => {
+    assert.strictEqual(validateToken('http://localhost:8000/download', null), true);
+    assert.strictEqual(validateToken('http://localhost:8000/download', ''), true);
   });
 
-  await t.test('createConnectionLimiter', () => {
+  await t.test('validateToken: returns true when URL query parameter t matches required token', () => {
+    assert.strictEqual(validateToken('http://localhost:8000/download?t=secret123', 'secret123'), true);
+  });
+
+  await t.test('validateToken: returns false when URL query parameter t is missing or mismatched', () => {
+    assert.strictEqual(validateToken('http://localhost:8000/download', 'secret123'), false);
+    assert.strictEqual(validateToken('http://localhost:8000/download?t=wrong', 'secret123'), false);
+    assert.strictEqual(validateToken('http://localhost:8000/download?t=short', 'secret123'), false);
+  });
+
+  await t.test('validateToken: returns false on invalid URL string', () => {
+    assert.strictEqual(validateToken('not-a-valid-url-format', 'secret123'), false);
+  });
+
+  await t.test('createConnectionLimiter: limits concurrent connections and decrements on close', () => {
     const limiter = createConnectionLimiter(2);
     let rejectedCount = 0;
-    const mockReject = () => { rejectedCount++; };
+    const rejectCallback = () => { rejectedCount++; };
 
-    const mockSocket1 = { once: (event, cb) => { mockSocket1.onClose = cb; } };
-    const mockSocket2 = { once: (event, cb) => { mockSocket2.onClose = cb; } };
-    const mockSocket3 = { once: (event, cb) => { mockSocket3.onClose = cb; } };
+    const socket1 = new EventEmitter();
+    const socket2 = new EventEmitter();
+    const socket3 = new EventEmitter();
 
-    // First two allowed
-    assert.strictEqual(limiter.handleConnection(mockSocket1, mockReject), true);
-    assert.strictEqual(limiter.handleConnection(mockSocket2, mockReject), true);
-    assert.strictEqual(rejectedCount, 0);
+    assert.strictEqual(limiter.handleConnection(socket1, rejectCallback), true);
+    assert.strictEqual(limiter.handleConnection(socket2, rejectCallback), true);
 
-    // Third one rejected
-    assert.strictEqual(limiter.handleConnection(mockSocket3, mockReject), false);
+    // Threshold reached: 3rd connection must be rejected
+    assert.strictEqual(limiter.handleConnection(socket3, rejectCallback), false);
     assert.strictEqual(rejectedCount, 1);
 
-    // Close one socket
-    mockSocket1.onClose();
+    // Socket 1 closes
+    socket1.emit('close');
 
-    // Now allowed
-    assert.strictEqual(limiter.handleConnection(mockSocket3, mockReject), true);
-    assert.strictEqual(rejectedCount, 1);
+    // 4th connection should now be accepted
+    const socket4 = new EventEmitter();
+    assert.strictEqual(limiter.handleConnection(socket4, rejectCallback), true);
   });
 
-  await t.test('isSensitiveFile', () => {
-    assert.strictEqual(isSensitiveFile('/path/to/key.pem'), true);
-    assert.strictEqual(isSensitiveFile('/path/to/my.key'), true);
-    assert.strictEqual(isSensitiveFile('/path/to/.env'), true);
-    assert.strictEqual(isSensitiveFile('/path/to/.env.production'), true);
-    assert.strictEqual(isSensitiveFile('/path/to/id_rsa'), true);
+  await t.test('isSensitiveFile: identifies sensitive file patterns correctly', () => {
+    assert.strictEqual(isSensitiveFile('/path/to/server.pem'), true);
+    assert.strictEqual(isSensitiveFile('/path/to/private.key'), true);
+    assert.strictEqual(isSensitiveFile('/project/.env'), true);
+    assert.strictEqual(isSensitiveFile('/project/.env.local'), true);
+    assert.strictEqual(isSensitiveFile('/home/user/.ssh/id_rsa'), true);
     assert.strictEqual(isSensitiveFile('/path/to/credentials.json'), true);
 
-    // Normal files
+    // Standard non-sensitive files
+    assert.strictEqual(isSensitiveFile('/path/to/document.pdf'), false);
     assert.strictEqual(isSensitiveFile('/path/to/image.png'), false);
-    assert.strictEqual(isSensitiveFile('/path/to/readme.md'), false);
+    assert.strictEqual(isSensitiveFile('/path/to/notes.txt'), false);
+  });
+
+  await t.test('confirmSensitiveFile: returns true immediately for non-sensitive file', async () => {
+    const confirmed = await confirmSensitiveFile('/path/to/public-file.txt');
+    assert.strictEqual(confirmed, true);
+  });
+
+  await t.test('confirmSensitiveFile: prompts user and returns true for "y" / "Y" input', async (tContext) => {
+    const mockRl = {
+      question: (prompt, callback) => {
+        callback('y');
+      },
+      close: () => {}
+    };
+
+    tContext.mock.method(readline, 'createInterface', () => mockRl);
+
+    const confirmedLower = await confirmSensitiveFile('/path/to/secret.pem');
+    assert.strictEqual(confirmedLower, true);
+
+    const mockRlUpper = {
+      question: (prompt, callback) => {
+        callback('Y');
+      },
+      close: () => {}
+    };
+
+    tContext.mock.method(readline, 'createInterface', () => mockRlUpper);
+
+    const confirmedUpper = await confirmSensitiveFile('/path/to/secret.env');
+    assert.strictEqual(confirmedUpper, true);
+  });
+
+  await t.test('confirmSensitiveFile: prompts user and returns false for "n" / non-y input', async (tContext) => {
+    const mockRl = {
+      question: (prompt, callback) => {
+        callback('n');
+      },
+      close: () => {}
+    };
+
+    tContext.mock.method(readline, 'createInterface', () => mockRl);
+
+    const confirmedNo = await confirmSensitiveFile('/path/to/id_rsa');
+    assert.strictEqual(confirmedNo, false);
   });
 });
