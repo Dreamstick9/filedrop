@@ -169,6 +169,43 @@ async function createServer({
     .progress-fill { height: 100%; background: linear-gradient(90deg, #0A84FF, #5E5CE6); width: 0%; transition: width 0.1s linear; box-shadow: 0 0 10px rgba(10,132,255,0.5); }
     .status-row { display: flex; justify-content: space-between; font-size: 0.85rem; color: #888; }
     @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+    /* Scroll-to-top button */
+    #scrollTopBtn {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: none;
+      background: #0A84FF;
+      color: #fff;
+      font-size: 20px;
+      line-height: 44px;
+      text-align: center;
+      padding: 0;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(10,132,255,0.4);
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(10px);
+      transition: opacity 0.25s ease, transform 0.25s ease, background 0.2s ease, visibility 0.25s;
+      z-index: 9999;
+    }
+    #scrollTopBtn.visible {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+    }
+    #scrollTopBtn:hover {
+      background: #5E5CE6;
+      transform: translateY(-2px);
+    }
+    #scrollTopBtn:focus-visible {
+      outline: 2px solid #fff;
+      outline-offset: 2px;
+    }
   </style>
 </head>
 <body>
@@ -185,9 +222,30 @@ async function createServer({
         <span id="percentText">0%</span>
       </div>
     `}
-  </div>
-  <script src="/forge.min.js"></script>
+</div>
+  <button id="scrollTopBtn" aria-label="Scroll to top" title="Scroll to top">&#8593;</button>
   <script>
+    (function() {
+      var scrollBtn = document.getElementById('scrollTopBtn');
+      var threshold = 300;
+
+      function toggleScrollBtn() {
+        if (window.scrollY > threshold) {
+          scrollBtn.classList.add('visible');
+        } else {
+          scrollBtn.classList.remove('visible');
+        }
+      }
+
+      window.addEventListener('scroll', toggleScrollBtn, { passive: true });
+      toggleScrollBtn();
+
+      scrollBtn.addEventListener('click', function() {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    })();
+  </script>
+  <script src="/forge.min.js"></script>  <script>
     // Chunking is necessary to avoid "Maximum call stack size exceeded" errors from String.fromCharCode.apply
     function u8ToBinaryString(u8) {
       let res = '';
