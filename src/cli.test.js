@@ -242,5 +242,49 @@ test('CLI Parser', async (t) => {
       console.error = originalError;
     }
   });
+
+  await t.test('Parses valid --download-limit option', () => {
+    const filePath = createTempFile(1024, '.txt');
+    const config = parseArgs(['node', 'filedrop', filePath, '--download-limit', '3']);
+    assert.strictEqual(config.downloadLimit, 3);
+  });
+
+  await t.test('Fails on invalid --download-limit option (non-integer or <= 0)', () => {
+    const filePath = createTempFile(1024, '.txt');
+    const originalExit = process.exit;
+    const originalError = console.error;
+    let exitCode = null;
+    let errors = [];
+
+    process.exit = (code) => {
+      exitCode = code;
+    };
+    console.error = (msg) => {
+      errors.push(msg);
+    };
+
+    try {
+      parseArgs(['node', 'filedrop', filePath, '--download-limit', 'abc']);
+      assert.strictEqual(exitCode, 1);
+      assert.ok(errors.some(err => err.includes('--download-limit must be a positive integer')));
+
+      exitCode = null;
+      errors = [];
+
+      parseArgs(['node', 'filedrop', filePath, '--download-limit', '0']);
+      assert.strictEqual(exitCode, 1);
+      assert.ok(errors.some(err => err.includes('--download-limit must be a positive integer')));
+
+      exitCode = null;
+      errors = [];
+
+      parseArgs(['node', 'filedrop', filePath, '--download-limit', '-5']);
+      assert.strictEqual(exitCode, 1);
+      assert.ok(errors.some(err => err.includes('--download-limit must be a positive integer')));
+    } finally {
+      process.exit = originalExit;
+      console.error = originalError;
+    }
+  });
 });
 
