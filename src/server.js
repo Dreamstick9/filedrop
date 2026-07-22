@@ -99,7 +99,7 @@ async function createServer({
   }
 
   const safeFileName = fileName
-    .replace(/[\r\n\0\x1F]/g, '')
+    .replace(/[\x00-\x1F\x7F]/g, '')
     .replace(/\\/g, '\\\\')
     .replace(/"/g, '\\"');
   const encodedFileName = encodeURIComponent(fileName)
