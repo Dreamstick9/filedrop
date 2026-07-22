@@ -291,8 +291,8 @@ class MeshTransport {
       if (this.isClipboard) {
         sourceStream = require('stream').Readable.from([Buffer.from(this.clipboardData, 'utf8')]);
       } else if (this.isMultiFile) {
-        const ZipArchiveClass = await getZipArchive();
-        const archive = new ZipArchiveClass({ zlib: { level: 5 } });
+        const archiver = require('archiver');
+        const archive = archiver('zip', { zlib: { level: 5 } });
         const addedNames = new Set();
         for (const file of this.filePaths) {
           let name = path.basename(file);
@@ -311,8 +311,8 @@ class MeshTransport {
         archive.finalize();
         sourceStream = archive;
       } else if (this.isDirectory) {
-        const ZipArchiveClass = await getZipArchive();
-        const archive = new ZipArchiveClass({ zlib: { level: 5 } });
+        const archiver = require('archiver');
+        const archive = archiver('zip', { zlib: { level: 5 } });
         archive.directory(this.filePath, false);
         archive.finalize();
         sourceStream = archive;
@@ -328,23 +328,41 @@ class MeshTransport {
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv('aes-256-gcm', aesKey, iv);
 
-    // Stream encrypted chunks
+    // 1. Send IV (12 bytes) as first relay-data frame
+    this.ws.send(JSON.stringify({
+      type: 'relay-data',
+      data: iv.toString('base64')
+    }));
+
+    // 2. Stream ciphertext chunks
     sourceStream.on('data', (chunk) => {
       if (this.shutdownCalled) return;
       const encrypted = cipher.update(chunk);
-      if (encrypted.length > 0) {
-        this.sendRelayChunk(iv, encrypted, null);
+      if (encrypted.length > 0 && this.ws && this.ws.readyState === 1) {
+        this.ws.send(JSON.stringify({
+          type: 'relay-data',
+          data: encrypted.toString('base64')
+        }));
       }
     });
 
     sourceStream.on('end', () => {
       if (this.shutdownCalled) return;
       const finalBuffer = cipher.final();
+      if (finalBuffer.length > 0 && this.ws && this.ws.readyState === 1) {
+        this.ws.send(JSON.stringify({
+          type: 'relay-data',
+          data: finalBuffer.toString('base64')
+        }));
+      }
       const authTag = cipher.getAuthTag();
-      this.sendRelayChunk(iv, finalBuffer, authTag);
-
-      // Signal transfer complete
       if (this.ws && this.ws.readyState === 1) {
+        // 3. Send AuthTag (16 bytes) as last relay-data frame
+        this.ws.send(JSON.stringify({
+          type: 'relay-data',
+          data: authTag.toString('base64')
+        }));
+        // Signal transfer complete
         this.ws.send(JSON.stringify({ type: 'transfer-complete' }));
       }
     });
@@ -352,22 +370,6 @@ class MeshTransport {
     sourceStream.on('error', (err) => {
       this.handleError(err);
     });
-  }
-
-  sendRelayChunk(iv, encryptedData, authTag) {
-    if (!this.ws || this.ws.readyState !== 1) return;
-
-    let payload;
-    if (authTag) {
-      payload = Buffer.concat([iv, encryptedData, authTag]);
-    } else {
-      payload = Buffer.concat([iv, encryptedData]);
-    }
-
-    this.ws.send(JSON.stringify({
-      type: 'relay-data',
-      data: payload.toString('base64')
-    }));
   }
 
   handleError(err) {
