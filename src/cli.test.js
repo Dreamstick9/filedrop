@@ -12,10 +12,20 @@ const path = require('node:path');
 test('CLI Parser', async (t) => {
   t.afterEach(cleanupTempFiles);
 
-  await t.test('Help text includes --qr / --no-qr flags', () => {
+  await t.test('Help text includes --qr / --no-qr flags and --transfer-timeout', () => {
     const binPath = path.join(__dirname, '..', 'bin', 'filedrop.js');
     const stdout = execFileSync(process.execPath, [binPath, '--help']).toString();
     assert.match(stdout, /--qr \/ --no-qr/);
+    assert.match(stdout, /--transfer-timeout/);
+  });
+
+  await t.test('Parses custom --transfer-timeout option and defaults to 60', () => {
+    const filePath = createTempFile(1024, '.txt');
+    const defaultConfig = parseArgs(['node', 'filedrop', filePath]);
+    assert.strictEqual(defaultConfig.transferTimeout, 60);
+
+    const customConfig = parseArgs(['node', 'filedrop', filePath, '--transfer-timeout', '120']);
+    assert.strictEqual(customConfig.transferTimeout, 120);
   });
 
   await t.test('Parses custom rate limit options', () => {
