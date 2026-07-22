@@ -250,6 +250,38 @@ test('CLI Parser', async (t) => {
   });
 
   await t.test('Fails on invalid --download-limit option (non-integer or <= 0)', () => {
+  await t.test('Parses NAT relay options correctly', () => {
+    const filePath = createTempFile(1024, '.txt');
+    const config = parseArgs([
+      'node',
+      'filedrop',
+      filePath,
+      '--no-relay',
+      '--relay-password',
+      'secret123',
+      '--ice-timeout',
+      '15'
+    ]);
+
+    assert.strictEqual(config.relay, false);
+    assert.strictEqual(config.relayPassword, 'secret123');
+    assert.strictEqual(config.iceTimeout, 15);
+  });
+
+  await t.test('Relay option defaults to true and ice-timeout defaults to 8', () => {
+    const filePath = createTempFile(1024, '.txt');
+    const config = parseArgs([
+      'node',
+      'filedrop',
+      filePath
+    ]);
+
+    assert.strictEqual(config.relay, true);
+    assert.strictEqual(config.relayPassword, null);
+    assert.strictEqual(config.iceTimeout, 8);
+  });
+
+  await t.test('Fails on invalid --ice-timeout option (non-integer or negative)', () => {
     const filePath = createTempFile(1024, '.txt');
     const originalExit = process.exit;
     const originalError = console.error;
@@ -274,6 +306,9 @@ test('CLI Parser', async (t) => {
       parseArgs(['node', 'filedrop', filePath, '--download-limit', '0']);
       assert.strictEqual(exitCode, 1);
       assert.ok(errors.some(err => err.includes('--download-limit must be a positive integer')));
+      parseArgs(['node', 'filedrop', filePath, '--ice-timeout', '-5']);
+      assert.strictEqual(exitCode, 1);
+      assert.ok(errors.some(err => err.includes('must be a positive integer')));
 
       exitCode = null;
       errors = [];
@@ -281,6 +316,9 @@ test('CLI Parser', async (t) => {
       parseArgs(['node', 'filedrop', filePath, '--download-limit', '-5']);
       assert.strictEqual(exitCode, 1);
       assert.ok(errors.some(err => err.includes('--download-limit must be a positive integer')));
+      parseArgs(['node', 'filedrop', filePath, '--ice-timeout', 'abc']);
+      assert.strictEqual(exitCode, 1);
+      assert.ok(errors.some(err => err.includes('must be a positive integer')));
     } finally {
       process.exit = originalExit;
       console.error = originalError;

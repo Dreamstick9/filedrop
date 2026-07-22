@@ -98,13 +98,10 @@ async function createServer({
     contentType = mime.getType(filePath) || 'application/octet-stream';
   }
 
-  const safeFileName = fileName
-    .replace(/[\r\n\0\x1F]/g, '')
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"');
   const encodedFileName = encodeURIComponent(fileName)
     .replace(/['()]/g, escape)
     .replace(/\*/g, '%2A');
+  const safeFileName = sanitizeDownloadFileName(fileName);
   const contentDisposition = `attachment; filename="${safeFileName}"; filename*=UTF-8''${encodedFileName}`;
 
   const version = options.version || VERSION;

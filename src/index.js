@@ -18,22 +18,25 @@ const { SignalingRoom } = require("./signaling");
 const { pickTransport } = require("./transport");
 
 /**
- * Assumed module interfaces:
- * * network.js:
- * getInterface(bindIp: string): Promise<string>
- * * port.js:
- * findAvailablePort(startPort: number, endPort: number): Promise<number>
- * * mdns.js:
- * announce(options: { name: string, port: number, txt: object }): Promise<void>
- * teardown(): Promise<void>
- * * server.js:
- * createServer(options: { filePath: string, port: number, options: object, onTransferStart: () => void, onTransferComplete: () => void, onTransferError: (err: Error) => void }): { shutdown: () => Promise<void>, start: () => Promise<void> }
- * * qr.js:
- * generateQR(url: string, mode: string): string
- * * ui.js:
- * renderStart(metadata: object): void
- * updateStatus(status: string): void
- * renderSuccess(): void
+ * Module interfaces:
+ *
+ * network.js:
+ *   getInterface(options?: { bind?: string, verbose?: boolean }): { name: string, info: os.NetworkInterfaceInfo }
+ *
+ * port.js:
+ *   findAvailablePort(startPort?: number, endPort?: number): Promise<number>
+ *
+ * mdns.js:
+ *   announce(config: { mdnsName: string, filename: string, size: number, transferId: string, ip: string, port: number, verbose?: boolean }): Promise<{ name: string, mdnsAvailable: boolean }>
+ *   deregister(): Promise<void>
+ *
+ * server.js:
+ *   createServer(options: { filePath: string, port: number, options: object, onTransferStart: () => void, onTransferComplete: () => void, onTransferError: (err: Error) => void }): Promise<{ server: http.Server, shutdown: () => Promise<void>, keyHex: string, downloadPath: string }>
+ *
+ * qr.js:
+ *   renderQR(url: string, options?: object): string
+ *   renderMetadataBox(filename: string, sizeHuman: string, url: string, mdnsName: string, options?: object): void
+ *   updateStatus(status: string, options?: object): void
  */
 
 const { LifecycleManager, STATES } = require('./lifecycle');
@@ -235,13 +238,21 @@ async function main() {
     mdnsName = config.name || filename.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().substring(0, 15) + '-filedrop';
     const transferId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
     
+    // Generate Room Code for signaling/MeshTransport
+    let roomCode = null;
+    if (config.mesh) {
+      const { generateRoomCode } = require("./room-code");
+      roomCode = generateRoomCode();
+    }
+    const roomId = roomCode || transferId;
+
     // Kick off mDNS announce and signaling room join in parallel
     if (config.mdns) {
       lifecycle.emit('mdns:announce', {
         mdnsName: config.name,
         filename: filename,
         size: config.fileSize,
-        transferId: transferId,
+        transferId: roomId,
         ip: ip,
         port: port,
         verbose: config.verbose
@@ -250,9 +261,9 @@ async function main() {
 
     let signalingRoom = null;
     if (config.signalUrl && config.mesh !== false) {
-      signalingRoom = new SignalingRoom(config.signalUrl, transferId);
+      signalingRoom = new SignalingRoom(config.signalUrl, roomId);
       if (config.verbose) {
-        console.log(`[filedrop:signaling] Joining signaling room in parallel: ${config.signalUrl} (room: ${transferId})`);
+        console.log(`[filedrop:signaling] Joining signaling room in parallel: ${config.signalUrl} (room: ${roomId})`);
       }
       signalingRoom.join().catch(err => {
         if (config.verbose) {
@@ -282,26 +293,83 @@ async function main() {
       });
     }
 
-    // Render and print QR code + metadata box
-    if (config.qr) {
-      const qrString = qr.renderQR(url, { compact: config.qrCompact, noQr: false, color: config.color });
-      console.log(qrString);
-      if (!config.qrCompact) {
-        let sizeDisplay;
-        if (config.isClipboard) {
-          sizeDisplay = 'Clipboard Text';
-        } else {
-          sizeDisplay = config.isDirectory ? '(streaming zip)' : config.fileSize + ' bytes';
-        }
-        
-        const { output, boxWidth } = qr.renderMetadataBox(filename, sizeDisplay, url, config.mdns ? mdnsName : null, { color: config.color });
-        calculatedBoxWidth = boxWidth;
-        console.log(output);
+    if (chosenTransport === 'mesh') {
+      const { MeshTransport } = require("./transport-mesh");
+      const meshTransport = new MeshTransport({
+        filePath: config.filePath,
+        filePaths: config.filePaths,
+        isMultiFile: config.isMultiFile,
+        isDirectory: config.isDirectory,
+        isClipboard: config.isClipboard,
+        clipboardData: clipboardData,
+        signalUrl: config.signalUrl,
+        transferId: roomId,
+        keyHex: keyHex,
+        relay: config.relay,
+        relayPassword: config.relayPassword,
+        iceTimeout: config.iceTimeout,
+        onStatusUpdate: (status) => {
+          qr.updateStatus(status, { color: config.color }, calculatedBoxWidth);
+        },
+        onTransferStart: (current, limit) => {
+          isTransferring = true;
+          if (lifecycle.state === STATES.WAITING) {
+            lifecycle.transition(STATES.TRANSFERRING, { socket: null });
+          }
+          lifecycle.emit('server:transfer-start', { currentCount: current, limit });
+        },
+        onTransferComplete: (completed, limit) => {
+          isTransferring = false;
+          lifecycle.emit('server:transfer-complete', { completedCount: completed, downloadLimit: limit });
+        },
+        onTransferError: (err) => {
+          isTransferring = false;
+          lifecycle.emit('server:transfer-error', err);
+        },
+        verbose: config.verbose
+      });
+
+      await meshTransport.start();
+      lifecycle.on('shutdown', (cleanups) => {
+        cleanups.push(meshTransport.shutdown());
+      });
+
+      // Render and print Mesh QR code + room codebox
+      const signalHost = config.signalHost || "https://signal.filedrop.local";
+      const finalMeshUrl = `${signalHost.replace(/\/+$/, '')}/r/${roomId}${config.relayPassword ? `?rp=${encodeURIComponent(config.relayPassword)}` : ''}#${keyHex}`;
+      
+      if (config.qr) {
+        const qrString = qr.renderQR(finalMeshUrl, { compact: config.qrCompact, noQr: false, color: config.color });
+        console.log(qrString);
+      } else {
+        console.log(`Mesh signal: ${finalMeshUrl}`);
       }
+      
+      const meshBox = qr.renderMeshCodeBox(roomId, { color: config.color });
+      calculatedBoxWidth = meshBox.split('\n')[1].length - 6; // estimate box width
+      console.log(meshBox);
     } else {
-      console.log(`URL: ${url}`);
-      if (config.mdns) {
-        console.log(`mDNS: http://${mdnsName}.local:${port}/${config.token ? `?t=${encodeURIComponent(config.token)}` : ''}#${keyHex}`);
+      // Render and print LAN QR code + metadata box
+      if (config.qr) {
+        const qrString = qr.renderQR(url, { compact: config.qrCompact, noQr: false, color: config.color });
+        console.log(qrString);
+        if (!config.qrCompact) {
+          let sizeDisplay;
+          if (config.isClipboard) {
+            sizeDisplay = 'Clipboard Text';
+          } else {
+            sizeDisplay = config.isDirectory ? '(streaming zip)' : config.fileSize + ' bytes';
+          }
+          
+          const { output, boxWidth } = qr.renderMetadataBox(filename, sizeDisplay, url, config.mdns ? mdnsName : null, { color: config.color });
+          calculatedBoxWidth = boxWidth;
+          console.log(output);
+        }
+      } else {
+        console.log(`URL: ${url}`);
+        if (config.mdns) {
+          console.log(`mDNS: http://${mdnsName}.local:${port}/${config.token ? `?t=${encodeURIComponent(config.token)}` : ''}#${keyHex}`);
+        }
       }
     }
 
@@ -351,20 +419,7 @@ async function main() {
     console.error(`\nTransfer timed out after ${config.timeout} seconds.`);
   });
 
-  // Render mesh room code box when --mesh is active
-  if (config.mesh) {
-    const { generateRoomCode } = require("./room-code");
-    const roomCode = generateRoomCode();
-    const signalHost = config.signalHost || "https://signal.filedrop.local";
-    if (config.qr) {
-      console.log(
-        "\n" + qr.renderMeshQR(signalHost, roomCode, { color: config.color }),
-      );
-    } else {
-      console.log(`\nMesh signal: ${signalHost}`);
-    }
-    console.log(qr.renderMeshCodeBox(roomCode, { color: config.color }));
-  }
+  // Render mesh room code box block removed (handled dynamically during startup)
 
   // Signal Handling
   let isShuttingDown = false;
