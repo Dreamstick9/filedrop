@@ -19,7 +19,8 @@ const {
   DEFAULT_SHUTDOWN_GRACE_MS,
   DEFAULT_RATE_LIMIT_WINDOW_MS,
   DEFAULT_RATE_LIMIT_MAX,
-  DEFAULT_MAX_CONNECTIONS
+  DEFAULT_MAX_CONNECTIONS,
+  DEFAULT_ICE_TIMEOUT_SECONDS
 } = require('./constants');
 const { MIN_PORT, MAX_PORT } = require('./port');
 
@@ -54,6 +55,9 @@ Options:
   --no-mdns              Disable mDNS broadcasting
   --mesh / --no-mesh     Enable or disable WebRTC mesh transport (default: auto)
   --signal-url <url>     Signaling server URL for WebRTC mesh fallback
+  --no-relay             Disable relay fallback for symmetric NAT
+  --relay-password <sec> Required shared secret before the relay accepts frames
+  --ice-timeout <s>      Seconds to wait for ICE connection before relay fallback (default: ${DEFAULT_ICE_TIMEOUT_SECONDS})
   --clipboard            Share system clipboard contents
   --verbose, -v          Verbose output (log all decisions)
   --no-color             Force no-color output (also respects NO_COLOR env var)
@@ -67,8 +71,8 @@ filedrop v${VERSION} — ${REPOSITORY_URL}`);
 
 function parseArgs(argv) {
   const args = minimist(argv.slice(2), {
-    boolean: ['qr-compact', 'verbose', 'version', 'help', 'qr', 'mdns', 'clipboard', 'warn-sensitive'],
-    string: ['port', 'bind', 'timeout', 'rate-limit-window', 'rate-limit-max', 'name', 'color', 'shutdown-grace-ms', 'token', 'max-connections', 'signal-url', 'signal-host'],
+    boolean: ['qr-compact', 'verbose', 'version', 'help', 'qr', 'mdns', 'clipboard', 'warn-sensitive', 'relay'],
+    string: ['port', 'bind', 'timeout', 'rate-limit-window', 'rate-limit-max', 'name', 'color', 'shutdown-grace-ms', 'token', 'max-connections', 'signal-url', 'signal-host', 'relay-password', 'ice-timeout'],
     alias: {
       p: "port",
       b: "bind",
@@ -81,8 +85,10 @@ function parseArgs(argv) {
       qr: true,
       mdns: true,
       color: true,
+      relay: true,
       'warn-sensitive': true,
       timeout: String(DEFAULT_TIMEOUT_SECONDS),
+      'ice-timeout': String(DEFAULT_ICE_TIMEOUT_SECONDS),
       'rate-limit-window': String(DEFAULT_RATE_LIMIT_WINDOW_MS),
       'rate-limit-max': String(DEFAULT_RATE_LIMIT_MAX),
       'shutdown-grace-ms': String(DEFAULT_SHUTDOWN_GRACE_MS),
@@ -238,6 +244,13 @@ function parseArgs(argv) {
     process.exit(1);
   }
 
+  let iceTimeout = parseInt(args['ice-timeout'], 10);
+  if (isNaN(iceTimeout) || iceTimeout <= 0) {
+    console.error("filedrop: error: --ice-timeout must be a positive integer");
+    console.error("Run 'filedrop --help' for usage.");
+    process.exit(1);
+  }
+
   let token = null;
   if (args.token !== undefined) {
     if (args.token === '') {
@@ -272,6 +285,9 @@ function parseArgs(argv) {
     mesh: args.mesh,
     signalUrl: args['signal-url'],
     signalHost: args["signal-host"] || null,
+    relay: args.relay,
+    relayPassword: args['relay-password'] || null,
+    iceTimeout,
   };
 }
 

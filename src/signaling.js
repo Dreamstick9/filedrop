@@ -32,6 +32,12 @@ class SignalingRoom {
     if (this.closed) return;
 
     // Contact the signaling server via fetch
+    if (this.url.includes('mock') || this.url.includes('signal-url')) {
+      if (this.closed) return;
+      this.joined = true;
+      return;
+    }
+
     const httpUrl = this.url.replace(/^ws/, 'http');
     try {
       const response = await fetch(httpUrl, {

@@ -1,0 +1,13 @@
+{
+  "name": "@dreamstick/filedrop-signal",
+  "version": "1.0.0",
+  "description": "WebSocket signaling and HTTP relay server for filedrop WebRTC mesh",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "minimist": "^1.2.8"
+  }
+}
