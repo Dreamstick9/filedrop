@@ -243,6 +243,13 @@ test('CLI Parser', async (t) => {
     }
   });
 
+  await t.test('Parses valid --download-limit option', () => {
+    const filePath = createTempFile(1024, '.txt');
+    const config = parseArgs(['node', 'filedrop', filePath, '--download-limit', '3']);
+    assert.strictEqual(config.downloadLimit, 3);
+  });
+
+  await t.test('Fails on invalid --download-limit option (non-integer or <= 0)', () => {
   await t.test('Parses NAT relay options correctly', () => {
     const filePath = createTempFile(1024, '.txt');
     const config = parseArgs([
@@ -289,6 +296,16 @@ test('CLI Parser', async (t) => {
     };
 
     try {
+      parseArgs(['node', 'filedrop', filePath, '--download-limit', 'abc']);
+      assert.strictEqual(exitCode, 1);
+      assert.ok(errors.some(err => err.includes('--download-limit must be a positive integer')));
+
+      exitCode = null;
+      errors = [];
+
+      parseArgs(['node', 'filedrop', filePath, '--download-limit', '0']);
+      assert.strictEqual(exitCode, 1);
+      assert.ok(errors.some(err => err.includes('--download-limit must be a positive integer')));
       parseArgs(['node', 'filedrop', filePath, '--ice-timeout', '-5']);
       assert.strictEqual(exitCode, 1);
       assert.ok(errors.some(err => err.includes('must be a positive integer')));
@@ -296,6 +313,9 @@ test('CLI Parser', async (t) => {
       exitCode = null;
       errors = [];
 
+      parseArgs(['node', 'filedrop', filePath, '--download-limit', '-5']);
+      assert.strictEqual(exitCode, 1);
+      assert.ok(errors.some(err => err.includes('--download-limit must be a positive integer')));
       parseArgs(['node', 'filedrop', filePath, '--ice-timeout', 'abc']);
       assert.strictEqual(exitCode, 1);
       assert.ok(errors.some(err => err.includes('must be a positive integer')));

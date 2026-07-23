@@ -63,6 +63,7 @@ Options:
   --no-color             Force no-color output (also respects NO_COLOR env var)
   --version              Print version and exit
   --help, -h             Print help and exit
+  --download-limit <n>   Number of allowed downloads before closing (default: 1 in non-interactive mode)
   --mesh                 Enable mesh (cross-network) mode; shows a 6-char room code  
   --signal-host <url>    Signaling server base URL (default: https://signal.filedrop.local)  
 
@@ -72,7 +73,7 @@ filedrop v${VERSION} — ${REPOSITORY_URL}`);
 function parseArgs(argv) {
   const args = minimist(argv.slice(2), {
     boolean: ['qr-compact', 'verbose', 'version', 'help', 'qr', 'mdns', 'clipboard', 'warn-sensitive', 'relay'],
-    string: ['port', 'bind', 'timeout', 'rate-limit-window', 'rate-limit-max', 'name', 'color', 'shutdown-grace-ms', 'token', 'max-connections', 'signal-url', 'signal-host', 'relay-password', 'ice-timeout'],
+    string: ['port', 'bind', 'timeout', 'rate-limit-window', 'rate-limit-max', 'name', 'color', 'shutdown-grace-ms', 'token', 'max-connections', 'signal-url', 'signal-host', 'relay-password', 'ice-timeout', 'download-limit'],
     alias: {
       p: "port",
       b: "bind",
@@ -191,6 +192,17 @@ function parseArgs(argv) {
     }
   }
 
+  let downloadLimit = undefined;
+  if (args['download-limit'] !== undefined) {
+    const downloadLimitRaw = args['download-limit'];
+    downloadLimit = Number(downloadLimitRaw);
+    if (!/^\d+$/.test(downloadLimitRaw) || !Number.isSafeInteger(downloadLimit) || downloadLimit <= 0) {
+      console.error("filedrop: error: --download-limit must be a positive integer");
+      console.error("Run 'filedrop --help' for usage.");
+      process.exit(1);
+    }
+  }
+
   let timeout = parseInt(args.timeout, 10);
   if (isNaN(timeout) || timeout <= 0) {
     console.error("filedrop: error: --timeout must be a positive integer");
@@ -285,6 +297,7 @@ function parseArgs(argv) {
     mesh: args.mesh,
     signalUrl: args['signal-url'],
     signalHost: args["signal-host"] || null,
+    downloadLimit,
     relay: args.relay,
     relayPassword: args['relay-password'] || null,
     iceTimeout,

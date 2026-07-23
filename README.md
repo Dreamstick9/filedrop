@@ -37,7 +37,9 @@ npx @dreamstick/filedrop ./photo.jpg
 filedrop ./photo.jpg                # serve an image
 filedrop ./report.pdf               # serve a document
 filedrop ./video.mp4 -m             # serve and broadcast via mDNS
-filedrop ./folder1 ./file2.txt      # serve multiple files/directories (zipped on the fly)
+filedrop ./photo1.jpg ./photo2.jpg ./photo3.jpg  # serve multiple files as .zip
+filedrop ./my-folder                             # serve a directory as .zip
+filedrop ./movie.mp4 --download-limit 3          # serve with a specific download limit
 filedrop --clipboard                # share your clipboard contents
 ```
 
@@ -59,6 +61,7 @@ filedrop --clipboard                # share your clipboard contents
 | `--max-connections <n>` | Max concurrent TCP connections (default: 10, 0 to disable) |
 | `--no-warn-sensitive` | Bypass warning prompt before serving sensitive files |
 | `--no-mdns` | Disable mDNS broadcasting |
+| `--download-limit <n>` | Set a specific number of allowed downloads (non-interactive mode defaults to 1) |
 | `--mesh / --no-mesh` | Enable or disable WebRTC mesh transport (default: auto fallback) |
 | `--signal-url <url>` | Signaling server URL for WebRTC mesh fallback |
 | `--clipboard` | Share clipboard contents instead of a file |

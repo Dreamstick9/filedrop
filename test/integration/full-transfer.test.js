@@ -23,10 +23,7 @@ test('Full transfer integration', async (t) => {
     const filePath = createTempFile(1024);
     const cliPath = path.join(__dirname, '../../bin/filedrop.js');
 
-    const filedropProcess = spawn(process.execPath, [cliPath, filePath, '--port', '8123', '--no-mdns']);
-    
-    // Satisfy the pre-existing device limit prompt
-    filedropProcess.stdin.write('\n');
+    const filedropProcess = spawn(process.execPath, [cliPath, filePath, '--port', '8123', '--no-mdns', '--download-limit', '1']);
     
     let output = '';
     filedropProcess.stdout.on('data', data => output += data.toString());

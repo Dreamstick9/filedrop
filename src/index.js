@@ -189,13 +189,18 @@ async function main() {
   lifecycle.on('port:resolved', async (resolvedPort) => {
     port = resolvedPort;
 
-    const readline = require('readline').createInterface({ input: process.stdin, output: process.stdout });
-    const limit = await new Promise(resolve => {
-      readline.question('How many devices will download this file? [1]: ', ans => {
-        readline.close();
-        resolve(parseInt(ans, 10) || 1);
+    let limit = 1;
+    if (config.downloadLimit !== undefined) {
+      limit = config.downloadLimit;
+    } else if (process.stdin.isTTY) {
+      const readline = require('readline').createInterface({ input: process.stdin, output: process.stdout });
+      limit = await new Promise(resolve => {
+        readline.question('How many devices will download this file? [1]: ', ans => {
+          readline.close();
+          resolve(parseInt(ans, 10) || 1);
+        });
       });
-    });
+    }
 
     // Trigger HTTP server start
     lifecycle.emit('server:start', {
