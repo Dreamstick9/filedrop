@@ -196,8 +196,9 @@ function parseArgs(argv) {
 
   let downloadLimit = undefined;
   if (args['download-limit'] !== undefined) {
-    downloadLimit = parseInt(args['download-limit'], 10);
-    if (isNaN(downloadLimit) || downloadLimit <= 0) {
+    const downloadLimitRaw = args['download-limit'];
+    downloadLimit = Number(downloadLimitRaw);
+    if (!/^\d+$/.test(downloadLimitRaw) || !Number.isSafeInteger(downloadLimit) || downloadLimit <= 0) {
       console.error("filedrop: error: --download-limit must be a positive integer");
       console.error("Run 'filedrop --help' for usage.");
       process.exit(1);
