@@ -115,6 +115,14 @@ function bind(lifecycle) {
   });
 }
 
+/**
+ * Resets the module-level firewall warning printed state.
+ * For testing purposes only.
+ */
+function _resetFirewallWarning() {
+  firewallWarningPrinted = false;
+}
+
 module.exports = {
   MIN_PORT,
   MAX_PORT,
@@ -122,4 +130,5 @@ module.exports = {
   getSpecificPort,
   isPortAvailable,
   bind,
+  _resetFirewallWarning,
 };

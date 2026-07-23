@@ -26,6 +26,7 @@ class LifecycleManager extends EventEmitter {
   constructor(config = {}) {
     super();
     this.state = STATES.INITIALIZING;
+    this.connectionTimeoutSeconds = typeof config.timeout === 'number' ? config.timeout : 300;
     const rawTransferTimeout = config.transferTimeout ?? config.transferTimeoutSeconds;
     const parsedTransferTimeout = Number(rawTransferTimeout);
     this.transferTimeoutSeconds = Number.isFinite(parsedTransferTimeout) && parsedTransferTimeout > 0

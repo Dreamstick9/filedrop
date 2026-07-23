@@ -4,9 +4,13 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const net = require('net');
-const { findAvailablePort, MAX_PORT } = require('./port.js');
+const { findAvailablePort, MAX_PORT, _resetFirewallWarning } = require('./port.js');
 
 test('Port Manager', async (t) => {
+  t.afterEach(() => {
+    _resetFirewallWarning();
+  });
+
   await t.test('Auto-selection success on first try', async () => {
     // Assuming 8000 is open, it should return 8000
     // Since we don't have the implementation yet, this will fail
@@ -51,5 +55,12 @@ test('Port Manager', async (t) => {
         server.close();
       }
     }
+  });
+
+  await t.test('_resetFirewallWarning resets state between test runs', async () => {
+    assert.strictEqual(typeof _resetFirewallWarning, 'function');
+    _resetFirewallWarning();
+    // Verify calling reset executes cleanly without throwing
+    _resetFirewallWarning();
   });
 });
