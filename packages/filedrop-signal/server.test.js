@@ -187,4 +187,59 @@ test('@dreamstick/filedrop-signal Server', async (t) => {
     ws1.close();
     ws2.close();
   });
+
+  await t.test('Prevents unjoined socket from injecting signals into active room', async () => {
+    const wsSender = new WebSocket(signalUrl);
+    const wsAttacker = new WebSocket(signalUrl);
+    const roomId = 'SEC01';
+
+    let receivedSignal = false;
+    wsSender.on('message', (data) => {
+      const msg = JSON.parse(data.toString());
+      if (msg.type === 'signal') receivedSignal = true;
+    });
+
+    await new Promise((resolve) => wsSender.on('open', resolve));
+    wsSender.send(JSON.stringify({ type: 'join', room: roomId, role: 'sender' }));
+
+    await new Promise((resolve) => wsAttacker.on('open', resolve));
+    // Attacker has NOT joined SEC01, attempts to inject signal
+    wsAttacker.send(JSON.stringify({ type: 'signal', room: roomId, payload: { injected: true } }));
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.strictEqual(receivedSignal, false, 'Unjoined socket signal must not be delivered');
+
+    wsSender.close();
+    wsAttacker.close();
+  });
+
+  await t.test('Prevents client from tearing down unjoined room via leave message', async () => {
+    const wsSender = new WebSocket(signalUrl);
+    const wsAttacker = new WebSocket(signalUrl);
+    const targetRoom = 'SEC02';
+    const attackerRoom = 'SEC03';
+
+    let senderDisconnected = false;
+    wsSender.on('message', (data) => {
+      const msg = JSON.parse(data.toString());
+      if (msg.type === 'error' && msg.message.includes('disconnected')) {
+        senderDisconnected = true;
+      }
+    });
+
+    await new Promise((resolve) => wsSender.on('open', resolve));
+    wsSender.send(JSON.stringify({ type: 'join', room: targetRoom, role: 'sender' }));
+
+    await new Promise((resolve) => wsAttacker.on('open', resolve));
+    wsAttacker.send(JSON.stringify({ type: 'join', room: attackerRoom, role: 'sender' }));
+
+    // Attacker tries to leave targetRoom (which it did NOT join)
+    wsAttacker.send(JSON.stringify({ type: 'leave', room: targetRoom }));
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.strictEqual(senderDisconnected, false, 'Target room must not be torn down by non-member leave');
+
+    wsSender.close();
+    wsAttacker.close();
+  });
 });

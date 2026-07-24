@@ -88,7 +88,8 @@ const args = minimist(process.argv.slice(2), {
 const port = parseInt(args.port, 10);
 const bindIp = args.bind;
 const globalRelayPassword = args['relay-password'];
-const allowedOrigins = args['allowed-origins'] ? args['allowed-origins'].split(',').map(s => s.trim()) : null;
+const allowedOriginsRaw = args['allowed-origins'] || process.env.ALLOWED_ORIGINS || '';
+const allowedOrigins = allowedOriginsRaw ? allowedOriginsRaw.split(',').map(s => s.trim()) : null;
 
 // In-memory active rooms Map
 // roomId -> { sender: WebSocket, receiver: WebSocket, password: string, limiter: RateLimiter, ttlTimer: Timeout, peers: Map }
@@ -405,15 +406,6 @@ function handleWebSocketConnection(ws, req) {
   }
 
   ws.on('message', (messageStr) => {
-    // Per-peer rate limiting
-    const now = Date.now();
-    ws.messageTimes = ws.messageTimes.filter(t => now - t < PEER_RATE_LIMIT_WINDOW_MS);
-    if (ws.messageTimes.length >= PEER_RATE_LIMIT_MAX) {
-      ws.send(JSON.stringify({ type: 'error', code: 'RATE_LIMITED', message: 'Rate limit exceeded' }));
-      return;
-    }
-    ws.messageTimes.push(now);
-
     let msg;
     try {
       msg = JSON.parse(messageStr);
@@ -421,9 +413,20 @@ function handleWebSocketConnection(ws, req) {
       return; // ignore invalid JSON
     }
 
-    const msgSize = typeof messageStr === 'string' ? Buffer.byteLength(messageStr) : messageStr.length;
     const isRelayData = msg.type === 'relay-data';
 
+    // Per-peer frequency rate limiting applies only to signaling/control frames (not high-throughput relay data)
+    if (!isRelayData) {
+      const now = Date.now();
+      ws.messageTimes = ws.messageTimes.filter(t => now - t < PEER_RATE_LIMIT_WINDOW_MS);
+      if (ws.messageTimes.length >= PEER_RATE_LIMIT_MAX) {
+        ws.send(JSON.stringify({ type: 'error', code: 'RATE_LIMITED', message: 'Rate limit exceeded' }));
+        return;
+      }
+      ws.messageTimes.push(now);
+    }
+
+    const msgSize = typeof messageStr === 'string' ? Buffer.byteLength(messageStr) : messageStr.length;
     if (!isRelayData && msgSize > MAX_PAYLOAD_SIZE) {
       ws.send(JSON.stringify({ type: 'error', code: 'PAYLOAD_TOO_LARGE', message: 'Payload size exceeds limit (64 KiB)' }));
       return;
@@ -517,14 +520,16 @@ function handleWebSocketConnection(ws, req) {
         }
       }
     } else if (msg.type === 'leave') {
-      const targetRoomId = msg.room || msg.roomId || wsRoomId;
-      if (targetRoomId) {
-        leaveRoom(ws, targetRoomId, wsRole);
+      if (wsRoomId) {
+        leaveRoom(ws, wsRoomId, wsRole);
         wsRoomId = null;
         wsRole = null;
       }
     } else if (msg.type === 'signal') {
-      const room = rooms.get(wsRoomId || msg.room || msg.roomId);
+      if (!wsRoomId) return;
+      if (msg.room && msg.room !== wsRoomId) return;
+      if (msg.roomId && msg.roomId !== wsRoomId) return;
+      const room = rooms.get(wsRoomId);
       if (!room) return;
       resetRoomTTL(room);
       const target = (wsRole === 'sender') ? room.receiver : room.sender;
@@ -533,10 +538,11 @@ function handleWebSocketConnection(ws, req) {
           type: 'signal',
           from: peerId,
           payload: msg.payload !== undefined ? msg.payload : msg,
-          room: wsRoomId || msg.room || msg.roomId
+          room: wsRoomId
         }));
       }
     } else if (msg.type === 'relay-data') {
+      if (!wsRoomId) return;
       const room = rooms.get(wsRoomId);
       if (!room) return;
       resetRoomTTL(room);
@@ -551,6 +557,7 @@ function handleWebSocketConnection(ws, req) {
         });
       }
     } else if (msg.type === 'meta' || msg.type === 'transfer-complete' || msg.type === 'transfer-complete-ack') {
+      if (!wsRoomId) return;
       const room = rooms.get(wsRoomId);
       if (!room) return;
       resetRoomTTL(room);
