@@ -210,7 +210,7 @@ async function main() {
           "How many devices will download this file? [1]: ",
           (ans) => {
             readline.close();
-            const n = parseInt(ans, 10);
+            const n = Number(ans);
             resolve(Number.isInteger(n) && n > 0 ? n : 1);
           },
         );
