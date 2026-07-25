@@ -96,8 +96,9 @@ class LanTransport {
     });
 
     const keyHex = serverHandle.keyHex;
+    const actualPort = (serverHandle.server && serverHandle.server.address && typeof serverHandle.server.address === 'function' && serverHandle.server.address() && serverHandle.server.address().port) || port;
     const hostIp = ip || '127.0.0.1';
-    const shareUrl = `http://${hostIp}:${port}/${effectiveToken ? `?t=${encodeURIComponent(effectiveToken)}` : ''}#${keyHex}`;
+    const shareUrl = `http://${hostIp}:${actualPort}/${effectiveToken ? `?t=${encodeURIComponent(effectiveToken)}` : ''}#${keyHex}`;
 
     return {
       transportId: 'lan',
