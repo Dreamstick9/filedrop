@@ -12,10 +12,50 @@ const path = require('node:path');
 test('CLI Parser', async (t) => {
   t.afterEach(cleanupTempFiles);
 
-  await t.test('Help text includes --qr / --no-qr flags', () => {
+  await t.test('Help text includes --qr / --no-qr flags and --transfer-timeout', () => {
     const binPath = path.join(__dirname, '..', 'bin', 'filedrop.js');
     const stdout = execFileSync(process.execPath, [binPath, '--help']).toString();
     assert.match(stdout, /--qr \/ --no-qr/);
+    assert.match(stdout, /--transfer-timeout/);
+  });
+
+  await t.test('Parses custom --transfer-timeout option and defaults to 60', () => {
+    const filePath = createTempFile(1024, '.txt');
+    const defaultConfig = parseArgs(['node', 'filedrop', filePath]);
+    assert.strictEqual(defaultConfig.transferTimeout, 60);
+
+    const customConfig = parseArgs(['node', 'filedrop', filePath, '--transfer-timeout', '120']);
+    assert.strictEqual(customConfig.transferTimeout, 120);
+  });
+
+  await t.test('Fails on invalid --transfer-timeout option', () => {
+    const filePath = createTempFile(1024, '.txt');
+    const originalExit = process.exit;
+    const originalError = console.error;
+    let exitCode = null;
+    let errors = [];
+
+    process.exit = (code) => {
+      exitCode = code;
+    };
+    console.error = (msg) => {
+      errors.push(msg);
+    };
+
+    try {
+      parseArgs(['node', 'filedrop', filePath, '--transfer-timeout', 'invalid123']);
+      assert.strictEqual(exitCode, 1);
+      assert.ok(errors.some(err => err.includes('--transfer-timeout must be a positive integer')));
+
+      exitCode = null;
+      errors = [];
+      parseArgs(['node', 'filedrop', filePath, '--transfer-timeout', '-5']);
+      assert.strictEqual(exitCode, 1);
+      assert.ok(errors.some(err => err.includes('--transfer-timeout must be a positive integer')));
+    } finally {
+      process.exit = originalExit;
+      console.error = originalError;
+    }
   });
 
   await t.test('Parses custom rate limit options', () => {

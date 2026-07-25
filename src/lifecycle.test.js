@@ -82,6 +82,35 @@ test('Lifecycle Manager', async (t) => {
     assert.strictEqual(lm.state, 'EXITED');
   });
 
+  await t.test('Transfer timeout uses default 60s when not configured', async () => {
+    const lm = new LifecycleManager();
+    assert.strictEqual(lm.transferTimeoutSeconds, 60);
+  });
+
+  await t.test('Transfer timeout uses custom config when transferTimeout is provided', async () => {
+    const lm = new LifecycleManager({ transferTimeout: 120 });
+    assert.strictEqual(lm.transferTimeoutSeconds, 120);
+  });
+
+  await t.test('Transfer timeout error message formats dynamic timeout value', async () => {
+    const lm = new LifecycleManager({ transferTimeout: 45 });
+    lm.state = 'TRANSFERRING';
+    
+    let caughtError = null;
+    lm.on('stateChange', ({ payload }) => {
+      if (payload && payload.error) {
+        caughtError = payload.error;
+      }
+    });
+
+    lm._startTransferTimeout();
+    // Trigger transfer timer callback manually
+    lm.transferTimer._onTimeout();
+
+    assert.ok(caughtError);
+    assert.strictEqual(caughtError.message, 'Transfer timeout exceeded (45s). Client too slow or hung.');
+  });
+
   await t.test('Failsafe exit uses default 1000ms when failsafeExitTimeout is not configured', async () => {
     const lm = new LifecycleManager();
     assert.strictEqual(lm.failsafeExitTimeout, 1000);

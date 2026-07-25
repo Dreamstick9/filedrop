@@ -16,6 +16,7 @@ const REPOSITORY_URL = repositoryUrl
 
 const {
   DEFAULT_TIMEOUT_SECONDS,
+  DEFAULT_TRANSFER_TIMEOUT_SECONDS,
   DEFAULT_SHUTDOWN_GRACE_MS,
   DEFAULT_RATE_LIMIT_WINDOW_MS,
   DEFAULT_RATE_LIMIT_MAX,
@@ -40,6 +41,7 @@ Options:
   -p, --port <n>         Specific port to bind (default: auto 8000-8999)
   -b, --bind <ip>        Network interface IP to use (default: auto-detect)
   -t, --timeout <s>      Seconds to wait for a connection (default: ${DEFAULT_TIMEOUT_SECONDS})
+  --transfer-timeout <s> Seconds allowed for an active transfer (default: ${DEFAULT_TRANSFER_TIMEOUT_SECONDS})
   --token [token]        Require a token parameter (?t=<token>) to access links. If no value is provided, a random 16-character hex token will be generated.
   --max-connections <n>  Max concurrent TCP connections (default: ${DEFAULT_MAX_CONNECTIONS}, 0 to disable)
   --no-warn-sensitive    Suppress warning prompt before serving sensitive files
@@ -74,7 +76,7 @@ filedrop v${VERSION} — ${REPOSITORY_URL}`);
 function parseArgs(argv) {
   const args = minimist(argv.slice(2), {
     boolean: ['qr-compact', 'verbose', 'version', 'help', 'qr', 'mdns', 'clipboard', 'warn-sensitive', 'relay'],
-    string: ['port', 'bind', 'timeout', 'rate-limit-window', 'rate-limit-max', 'name', 'color', 'shutdown-grace-ms', 'token', 'max-connections', 'signal-url', 'mesh-signal', 'signal-host', 'relay-password', 'ice-timeout', 'download-limit'],
+    string: ['port', 'bind', 'timeout', 'transfer-timeout', 'rate-limit-window', 'rate-limit-max', 'name', 'color', 'shutdown-grace-ms', 'token', 'max-connections', 'signal-url', 'mesh-signal', 'signal-host', 'relay-password', 'ice-timeout', 'download-limit'],
     alias: {
       p: "port",
       b: "bind",
@@ -90,6 +92,7 @@ function parseArgs(argv) {
       relay: true,
       'warn-sensitive': true,
       timeout: String(DEFAULT_TIMEOUT_SECONDS),
+      'transfer-timeout': String(DEFAULT_TRANSFER_TIMEOUT_SECONDS),
       'ice-timeout': String(DEFAULT_ICE_TIMEOUT_SECONDS),
       'rate-limit-window': String(DEFAULT_RATE_LIMIT_WINDOW_MS),
       'rate-limit-max': String(DEFAULT_RATE_LIMIT_MAX),
@@ -211,6 +214,15 @@ function parseArgs(argv) {
     process.exit(1);
   }
 
+  const transferTimeoutRaw = String(args['transfer-timeout']);
+  const transferTimeout = Number(transferTimeoutRaw);
+  const MAX_TRANSFER_TIMEOUT_SEC = 2_147_483;
+  if (!/^\d+$/.test(transferTimeoutRaw) || !Number.isSafeInteger(transferTimeout) || transferTimeout <= 0 || transferTimeout > MAX_TRANSFER_TIMEOUT_SEC) {
+    console.error(`filedrop: error: --transfer-timeout must be a positive integer <= ${MAX_TRANSFER_TIMEOUT_SEC}`);
+    console.error("Run 'filedrop --help' for usage.");
+    process.exit(1);
+  }
+
   const shutdownGraceMsRaw = args['shutdown-grace-ms'];
   if (!/^\d+$/.test(shutdownGraceMsRaw)) {
     console.error('filedrop: error: --shutdown-grace-ms must be a positive integer');
@@ -285,6 +297,7 @@ function parseArgs(argv) {
     port,
     bind: args.bind,
     timeout,
+    transferTimeout,
     shutdownGraceMs,
     rateLimitWindow,
     rateLimitMax,
