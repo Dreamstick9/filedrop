@@ -388,5 +388,25 @@ test('CLI Parser', async (t) => {
       console.error = originalError;
     }
   });
+
+  await t.test('Parses --mesh-signal and FILEDROP_MESH_SIGNAL_URL correctly', () => {
+    const filePath = createTempFile(1024, '.txt');
+
+    const config1 = parseArgs(['node', 'filedrop', filePath, '--mesh-signal', 'ws://signal.custom.com:8443']);
+    assert.strictEqual(config1.signalUrl, 'ws://signal.custom.com:8443');
+
+    const origEnv = process.env.FILEDROP_MESH_SIGNAL_URL;
+    try {
+      process.env.FILEDROP_MESH_SIGNAL_URL = 'ws://env.signal.com:8443';
+      const config2 = parseArgs(['node', 'filedrop', filePath]);
+      assert.strictEqual(config2.signalUrl, 'ws://env.signal.com:8443');
+    } finally {
+      if (origEnv !== undefined) {
+        process.env.FILEDROP_MESH_SIGNAL_URL = origEnv;
+      } else {
+        delete process.env.FILEDROP_MESH_SIGNAL_URL;
+      }
+    }
+  });
 });
 

@@ -328,34 +328,14 @@ async function createServer({
             };
             if (navigator.clipboard && navigator.clipboard.writeText) {
               navigator.clipboard.writeText(text).then(doCopy).catch(err => {
-                console.error('navigator.clipboard failed, trying fallback:', err);
-                fallbackCopy();
-              });
-            } else {
-              fallbackCopy();
-            }
-            function fallbackCopy() {
-              const dummyTextArea = document.createElement('textarea');
-              dummyTextArea.value = text;
-              dummyTextArea.style.position = 'fixed';
-              dummyTextArea.style.opacity = '0';
-              document.body.appendChild(dummyTextArea);
-              dummyTextArea.focus();
-              dummyTextArea.select();
-              try {
-                const successful = document.execCommand('copy');
-                if (successful) {
-                  doCopy();
-                } else {
-                  btn.innerText = 'Copy Failed';
-                  btn.style.background = '#FF453A';
-                }
-              } catch (err) {
-                console.error('Fallback copy failed:', err);
+                console.error('navigator.clipboard failed:', err);
                 btn.innerText = 'Copy Failed';
                 btn.style.background = '#FF453A';
-              }
-              document.body.removeChild(dummyTextArea);
+              });
+            } else {
+              console.error('Clipboard API unsupported');
+              btn.innerText = 'Clipboard API Unsupported';
+              btn.style.background = '#FF453A';
             }
           });
         } else {
