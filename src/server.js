@@ -704,31 +704,38 @@ function bind(lifecycle) {
 
   lifecycle.on('server:start', async (params) => {
     try {
-      const result = await module.exports.createServer({
-        ...params,
-        onTransferStart: (currentCount, limit) => {
-          lifecycle.emit('server:transfer-start', { currentCount, limit });
-          if (typeof params.onTransferStart === 'function') {
-            params.onTransferStart(currentCount, limit);
-          }
-        },
-        onTransferComplete: (completedCount, downloadLimit) => {
-          lifecycle.emit('server:transfer-complete', { completedCount, downloadLimit });
-          if (typeof params.onTransferComplete === 'function') {
-            params.onTransferComplete(completedCount, downloadLimit);
-          }
-        },
-        onTransferError: (err) => {
-          lifecycle.emit('server:transfer-error', err);
-          if (typeof params.onTransferError === 'function') {
-            params.onTransferError(err);
-          }
+      const { LanTransport } = require('./transport');
+      const transport = new LanTransport();
+
+      transport.on('transfer-start', ({ currentCount, limit }) => {
+        lifecycle.emit('server:transfer-start', { currentCount, limit });
+        if (typeof params.onTransferStart === 'function') {
+          params.onTransferStart(currentCount, limit);
         }
       });
 
+      transport.on('transfer-complete', ({ completedCount, downloadLimit }) => {
+        lifecycle.emit('server:transfer-complete', { completedCount, downloadLimit });
+        if (typeof params.onTransferComplete === 'function') {
+          params.onTransferComplete(completedCount, downloadLimit);
+        }
+      });
+
+      transport.on('transfer-error', (err) => {
+        lifecycle.emit('server:transfer-error', err);
+        if (typeof params.onTransferError === 'function') {
+          params.onTransferError(err);
+        }
+      });
+
+      const result = await transport.start(params);
       activeShutdown = result.shutdown;
 
-      lifecycle.emit('server:started', { keyHex: result.keyHex, downloadPath: result.downloadPath });
+      lifecycle.emit('server:started', {
+        keyHex: result.keyHex,
+        downloadPath: result.downloadPath,
+        shareUrl: result.shareUrl
+      });
     } catch (err) {
       lifecycle.emit('server:error', err);
     }
