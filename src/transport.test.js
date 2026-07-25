@@ -1,12 +1,64 @@
 /**
  * src/transport.test.js
- * Tests for transport selection policy and signaling orchestration.
+ * Tests for transport selection policy, LanTransport contract, and signaling orchestration.
  */
 const test = require('node:test');
 const assert = require('node:assert');
 const EventEmitter = require('node:events');
-const { pickTransport } = require('./transport.js');
+const fs = require('node:fs');
+const { LanTransport, pickTransport } = require('./transport.js');
 const { SignalingRoom } = require('./signaling.js');
+const { createTempFile, cleanupTempFiles } = require('../test/helpers/create-temp-file.js');
+
+test.afterEach(() => {
+  cleanupTempFiles();
+});
+
+test('LanTransport Contract & Implementation', async (t) => {
+  await t.test('LanTransport start() wraps server.createServer and returns transport contract shape', async () => {
+    const fileContent = 'LanTransport Test Content';
+    const filePath = createTempFile(fileContent.length, '.txt');
+    fs.writeFileSync(filePath, fileContent);
+
+    const transport = new LanTransport();
+    let startEventFired = false;
+
+    transport.on('transfer-start', (data) => {
+      startEventFired = true;
+    });
+
+    const handle = await transport.start({
+      filePath,
+      port: 0,
+      ip: '127.0.0.1',
+      token: 'secret-token-123'
+    });
+
+    assert.strictEqual(handle.transportId, 'lan');
+    assert.ok(typeof handle.keyHex === 'string' && handle.keyHex.length > 0);
+    assert.ok(handle.shareUrl.includes('127.0.0.1'));
+    assert.ok(handle.shareUrl.includes('?t=secret-token-123'));
+    assert.ok(handle.shareUrl.includes(`#${handle.keyHex}`));
+    assert.ok(typeof handle.shutdown === 'function');
+
+    await handle.shutdown();
+  });
+
+  await t.test('LanTransport shutdown() closes the HTTP server cleanly', async () => {
+    const filePath = createTempFile(1024, '.txt');
+    const transport = new LanTransport();
+
+    const handle = await transport.start({
+      filePath,
+      port: 0,
+      ip: '127.0.0.1'
+    });
+
+    await assert.doesNotReject(async () => {
+      await handle.shutdown();
+    });
+  });
+});
 
 test('pickTransport Policy Selection', async (t) => {
   

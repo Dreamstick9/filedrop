@@ -232,7 +232,7 @@ async function main() {
   // 3. Server Started
   lifecycle.on('server:started', async (data) => {
     keyHex = data.keyHex;
-    url = `http://${ip}:${port}/${config.token ? `?t=${encodeURIComponent(config.token)}` : ''}#${keyHex}`;
+    url = data.shareUrl || `http://${ip}:${port}/${config.token ? `?t=${encodeURIComponent(config.token)}` : ''}#${keyHex}`;
 
     // Initialize mDNS module (non-blocking)
     mdnsName = config.name || filename.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().substring(0, 15) + '-filedrop';

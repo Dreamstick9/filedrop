@@ -1,7 +1,113 @@
 /**
  * src/transport.js
- * Transport selection policy for choosing between local LAN and signaling mesh.
+ * Transport interface abstraction and transport selection policy.
  */
+const server = require('./server');
+
+/**
+ * LanTransport wraps the local HTTP-based transfer server.
+ */
+class LanTransport {
+  constructor() {
+    this.name = 'lan';
+    this.listeners = new Map();
+  }
+
+  /**
+   * Subscribes to transport events ('transfer-start' | 'transfer-complete' | 'transfer-error').
+   * @param {string} event
+   * @param {Function} callback
+   */
+  on(event, callback) {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, []);
+    }
+    this.listeners.get(event).push(callback);
+  }
+
+  /**
+   * Emits an event to registered subscribers.
+   * @param {string} event
+   * @param {...any} args
+   */
+  emit(event, ...args) {
+    const handlers = this.listeners.get(event) || [];
+    for (const fn of handlers) {
+      fn(...args);
+    }
+  }
+
+  /**
+   * Starts the LAN transfer server.
+   * @param {Object} params
+   * @param {string} [params.filePath]
+   * @param {Array<string>} [params.filePaths]
+   * @param {boolean} [params.isMultiFile]
+   * @param {boolean} [params.isDirectory]
+   * @param {boolean} [params.isClipboard]
+   * @param {string} [params.clipboardData]
+   * @param {number} params.port
+   * @param {string} [params.bindIp]
+   * @param {number} [params.downloadLimit]
+   * @param {string} [params.ip]
+   * @param {string} [params.token]
+   * @param {Object} [params.options]
+   * @returns {Promise<{ transportId: string, shareUrl: string, keyHex: string, downloadPath: string, shutdown: Function }>}
+   */
+  async start({
+    filePath,
+    filePaths,
+    isMultiFile,
+    isDirectory,
+    isClipboard,
+    clipboardData,
+    port,
+    bindIp,
+    downloadLimit = 1,
+    ip,
+    token,
+    options = {}
+  }) {
+    const effectiveToken = token !== undefined ? token : options.token;
+
+    const serverHandle = await server.createServer({
+      filePath,
+      filePaths,
+      isMultiFile,
+      isDirectory,
+      isClipboard,
+      clipboardData,
+      port,
+      bindIp,
+      downloadLimit,
+      options: {
+        ...options,
+        token: effectiveToken
+      },
+      onTransferStart: (currentCount, limit) => {
+        this.emit('transfer-start', { currentCount, limit });
+      },
+      onTransferComplete: (completedCount, limit) => {
+        this.emit('transfer-complete', { completedCount, downloadLimit: limit });
+      },
+      onTransferError: (err) => {
+        this.emit('transfer-error', err);
+      }
+    });
+
+    const keyHex = serverHandle.keyHex;
+    const hostIp = ip || '127.0.0.1';
+    const shareUrl = `http://${hostIp}:${port}/${effectiveToken ? `?t=${encodeURIComponent(effectiveToken)}` : ''}#${keyHex}`;
+
+    return {
+      transportId: 'lan',
+      shareUrl,
+      keyHex,
+      downloadPath: serverHandle.downloadPath,
+      shutdown: serverHandle.shutdown
+    };
+  }
+}
 
 /**
  * Automatically chooses between LAN (mDNS) and Mesh (WebRTC + signaling) based on a 5-step decision tree.
@@ -101,5 +207,6 @@ async function pickTransport({ mesh, signalUrl, mdns, timeoutMs = 3000, verbose 
 }
 
 module.exports = {
+  LanTransport,
   pickTransport
 };
