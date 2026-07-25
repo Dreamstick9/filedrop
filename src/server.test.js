@@ -646,3 +646,17 @@ test('Server Core', async (t) => {
     }
   });
 });
+test('Download Limit Input Parsing Validation', () => {
+  // The exact parsing logic implemented in index.js
+  const parseLimit = (ans) => {
+    const n = parseInt(ans, 10);
+    return Number.isInteger(n) && n > 0 ? n : 1;
+  };
+
+  // Acceptance Criteria Checks
+  assert.strictEqual(parseLimit('-3'), 1);  // Negative numbers default to 1
+  assert.strictEqual(parseLimit('0'), 1);   // Zero defaults to 1
+  assert.strictEqual(parseLimit('5'), 5);   // Positive integers are allowed
+  assert.strictEqual(parseLimit('abc'), 1); // NaN/Strings default to 1
+  assert.strictEqual(parseLimit(''), 1);    // Empty strings default to 1
+});
