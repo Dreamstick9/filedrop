@@ -82,6 +82,26 @@ test('Server Core', async (t) => {
     }
   });
 
+  await t.test('GET / injects text/plain and navigator.clipboard for clipboard transfers without deprecated execCommand', async () => {
+    const { server, shutdown } = await createServer({
+      isClipboard: true,
+      clipboardData: 'Test clipboard content',
+      port: 0,
+      onTransferComplete: () => {},
+      onTransferError: () => {}
+    });
+
+    const port = server.address().port;
+    const htmlRes = await httpClient(`http://127.0.0.1:${port}/`);
+    const bodyStr = htmlRes.body.toString();
+
+    assert.match(bodyStr, /type: "text\/plain"/);
+    assert.ok(bodyStr.includes('navigator.clipboard.writeText'));
+    assert.ok(!bodyStr.includes('execCommand'), 'Should not contain deprecated execCommand');
+
+    await shutdown();
+  });
+
   await t.test('GET / injects text/plain for clipboard transfers', async () => {
     const { server, shutdown, downloadPath } = await createServer({
       clipboardData: 'clipboard content',
