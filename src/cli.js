@@ -54,7 +54,8 @@ Options:
   --qr-compact           Print QR code without surrounding metadata box
   --no-mdns              Disable mDNS broadcasting
   --mesh / --no-mesh     Enable or disable WebRTC mesh transport (default: auto)
-  --signal-url <url>     Signaling server URL for WebRTC mesh fallback
+  --signal-url <url>, --mesh-signal <url>
+                         Signaling server URL for WebRTC mesh fallback (overrides FILEDROP_MESH_SIGNAL_URL)
   --no-relay             Disable relay fallback for symmetric NAT
   --relay-password <sec> Required shared secret before the relay accepts frames
   --ice-timeout <s>      Seconds to wait for ICE connection before relay fallback (default: ${DEFAULT_ICE_TIMEOUT_SECONDS})
@@ -73,7 +74,7 @@ filedrop v${VERSION} — ${REPOSITORY_URL}`);
 function parseArgs(argv) {
   const args = minimist(argv.slice(2), {
     boolean: ['qr-compact', 'verbose', 'version', 'help', 'qr', 'mdns', 'clipboard', 'warn-sensitive', 'relay'],
-    string: ['port', 'bind', 'timeout', 'rate-limit-window', 'rate-limit-max', 'name', 'color', 'shutdown-grace-ms', 'token', 'max-connections', 'signal-url', 'signal-host', 'relay-password', 'ice-timeout', 'download-limit'],
+    string: ['port', 'bind', 'timeout', 'rate-limit-window', 'rate-limit-max', 'name', 'color', 'shutdown-grace-ms', 'token', 'max-connections', 'signal-url', 'mesh-signal', 'signal-host', 'relay-password', 'ice-timeout', 'download-limit'],
     alias: {
       p: "port",
       b: "bind",
@@ -250,8 +251,10 @@ function parseArgs(argv) {
     process.exit(1);
   }
 
-  if (args.mesh && !args['signal-url']) {
-    console.error('filedrop: error: --signal-url is required when using --mesh');
+  const signalUrl = args['mesh-signal'] || args['signal-url'] || process.env.FILEDROP_MESH_SIGNAL_URL || null;
+
+  if (args.mesh && !signalUrl) {
+    console.error('filedrop: error: --mesh-signal or --signal-url is required when using --mesh');
     console.error("Run 'filedrop --help' for usage.");
     process.exit(1);
   }
@@ -295,7 +298,7 @@ function parseArgs(argv) {
     verbose: args.verbose,
     color: args.color,
     mesh: args.mesh,
-    signalUrl: args['signal-url'],
+    signalUrl,
     signalHost: args["signal-host"] || null,
     downloadLimit,
     relay: args.relay,
