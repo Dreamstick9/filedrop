@@ -226,8 +226,15 @@ function handleRequest(req, res) {
       let downloadInProgress = false;
       let pendingHashChange = false;
       let bufferedEncryptedData = null;
+      let activeWs = null;
 
-      function finishDownload() {
+      function finishDownload(wsInstance) {
+        if (wsInstance && activeWs && activeWs !== wsInstance) {
+          return;
+        }
+        if (wsInstance && activeWs === wsInstance) {
+          activeWs = null;
+        }
         downloadInProgress = false;
         if (pendingHashChange && window.location.hash.slice(1)) {
           pendingHashChange = false;
@@ -318,7 +325,7 @@ function handleRequest(req, res) {
             if (statusEl) statusEl.style.color = "#FF453A";
             console.error(err);
           } finally {
-            finishDownload();
+            finishDownload(null);
           }
           return;
         }
@@ -330,6 +337,7 @@ function handleRequest(req, res) {
           const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
           const wsUrl = protocol + '//' + window.location.host;
           const ws = new WebSocket(wsUrl);
+          activeWs = ws;
 
           let chunks = [];
           let totalBytes = 0;
@@ -337,6 +345,7 @@ function handleRequest(req, res) {
           let filename = 'relayed-download';
 
           ws.onopen = () => {
+            if (activeWs !== ws) return;
             setStatus("Joining room...");
             ws.send(JSON.stringify({
               type: 'join',
@@ -347,6 +356,7 @@ function handleRequest(req, res) {
           };
 
           ws.onclose = () => {
+            if (activeWs !== ws) return;
             if (statusEl.innerText !== "Done" && statusEl.innerText !== "Transfer Complete!") {
               if (statusEl.innerText === "Connecting to relay..." || statusEl.innerText === "Joining room...") {
                 setStatus("Disconnected from relay");
@@ -354,16 +364,17 @@ function handleRequest(req, res) {
                 setStatus("Disconnected from relay");
               }
             }
-            finishDownload();
+            finishDownload(ws);
           };
 
           ws.onmessage = async (event) => {
+            if (activeWs !== ws) return;
             try {
               const msg = JSON.parse(event.data);
               if (msg.type === 'error') {
                 setStatus("Error: " + msg.message);
                 ws.close();
-                finishDownload();
+                finishDownload(ws);
                 return;
               }
               if (msg.type === 'join-result') {
@@ -372,7 +383,7 @@ function handleRequest(req, res) {
                 } else {
                   setStatus("Join failed");
                   ws.close();
-                  finishDownload();
+                  finishDownload(ws);
                 }
                 return;
               }
@@ -473,23 +484,24 @@ function handleRequest(req, res) {
                 window.history.replaceState({}, document.title, window.location.pathname);
                 setStatus("Done");
                 if (titleEl) titleEl.innerText = "Download Started - Safe to close";
-                finishDownload();
+                finishDownload(ws);
               }
             } catch (err) {
+              if (activeWs !== ws) return;
               setStatus("Decryption Failed");
               if (statusEl) statusEl.style.color = "#FF453A";
               console.error(err);
               if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.close();
               }
-              finishDownload();
+              finishDownload(ws);
             }
           };
         } catch (err) {
           setStatus("Decryption Failed");
           if (statusEl) statusEl.style.color = "#FF453A";
           console.error(err);
-          finishDownload();
+          finishDownload(null);
         }
       }
 

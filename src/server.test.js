@@ -52,7 +52,7 @@ test('Server Core', async (t) => {
     assert.match(htmlStr, /window\.addEventListener\('hashchange'/);
     assert.match(htmlStr, /let downloadInProgress = false;/);
     assert.match(htmlStr, /let pendingHashChange = false;/);
-    assert.match(htmlStr, /function finishDownload\(\)/);
+    assert.match(htmlStr, /function finishDownload/);
 
     await shutdown();
   });

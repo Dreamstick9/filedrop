@@ -214,8 +214,10 @@ async function createServer({
       let downloadInProgress = false;
       let pendingHashChange = false;
       let bufferedEncryptedData = null;
+      let currentAttemptId = 0;
 
-      function finishDownload() {
+      function finishDownload(attemptId) {
+        if (attemptId && attemptId !== currentAttemptId) return;
         downloadInProgress = false;
         if (pendingHashChange && window.location.hash.slice(1)) {
           pendingHashChange = false;
@@ -238,6 +240,7 @@ async function createServer({
 
         downloadInProgress = true;
         pendingHashChange = false;
+        const attemptId = ++currentAttemptId;
         if (statusEl) statusEl.style.color = "";
 
         try {
@@ -251,7 +254,7 @@ async function createServer({
               setStatus("Error: Link Expired");
               setClipText("Error: Link expired or already copied.");
               ${isClipboard ? 'window.close();' : ''}
-              finishDownload();
+              finishDownload(attemptId);
               return;
             }
 
@@ -387,7 +390,7 @@ async function createServer({
             console.error(err);
             ${isClipboard ? 'window.close();' : ''}
           } finally {
-            finishDownload();
+            finishDownload(attemptId);
           }
         }
 
