@@ -198,7 +198,7 @@ async function createServer({
       return res;
     }
 
-    (async function() {
+    (function() {
       const statusEl = document.getElementById('statusText');
       const percentEl = document.getElementById('percentText');
       const progressEl = document.getElementById('progress');
@@ -211,153 +211,197 @@ async function createServer({
         if (textArea) textArea.value = txt;
       };
 
-      try {
+      let downloadInProgress = false;
+      let pendingHashChange = false;
+      let bufferedEncryptedData = null;
+      let currentAttemptId = 0;
+
+      function finishDownload(attemptId) {
+        if (attemptId && attemptId !== currentAttemptId) return;
+        downloadInProgress = false;
+        if (pendingHashChange && window.location.hash.slice(1)) {
+          pendingHashChange = false;
+          startDownload();
+        }
+      }
+
+      async function startDownload() {
+        if (downloadInProgress) {
+          pendingHashChange = true;
+          return;
+        }
+
         const hash = window.location.hash.slice(1);
         if (!hash) {
           setStatus("Error: Missing Key");
           setClipText("Error: Missing decryption key in URL.");
           return;
         }
-        
-        setStatus("Fetching...");
-        const response = await fetch('${downloadPath}' + window.location.search);
-        if (!response.ok) {
-          setStatus("Error: Link Expired");
-          setClipText("Error: Link expired or already copied.");
-          ${isClipboard ? 'window.close();' : ''}
-          return;
-        }
 
-        const contentLength = response.headers.get('Content-Length');
-        const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
-        let loadedBytes = 0;
-        const chunks = [];
-        if (!response.body) throw new Error("ReadableStream not supported by browser");
-        const reader = response.body.getReader();
+        downloadInProgress = true;
+        pendingHashChange = false;
+        const attemptId = ++currentAttemptId;
+        if (statusEl) statusEl.style.color = "";
 
-        setStatus("Downloading...");
-        while(true) {
-          const {done, value} = await reader.read();
-          if (done) break;
-          chunks.push(value);
-          loadedBytes += value.length;
-          if (totalBytes > 0) {
-            const percent = Math.min(100, Math.round((loadedBytes / totalBytes) * 100));
-            setProgressWidth(percent + "%");
-            setPercent(percent + "%");
+        try {
+          let encryptedBuffer;
+          if (bufferedEncryptedData) {
+            encryptedBuffer = bufferedEncryptedData;
           } else {
-            const mb = (loadedBytes / (1024 * 1024)).toFixed(1);
-            setPercent(mb + " MB");
-            setProgressWidth("100%");
-            if (progressEl) progressEl.style.animation = "pulse 1.5s ease-in-out infinite";
-          }
-        }
-
-        setStatus("Decrypting...");
-        const encryptedBuffer = new Uint8Array(loadedBytes);
-        let position = 0;
-        for (let chunk of chunks) {
-          encryptedBuffer.set(chunk, position);
-          position += chunk.length;
-        }
-        
-        const iv = new Uint8Array(encryptedBuffer.slice(0, 12));
-        const data = new Uint8Array(encryptedBuffer.slice(12));
-        
-        let decryptedBuffer;
-        if (window.crypto && window.crypto.subtle) {
-          const keyBytes = new Uint8Array(hash.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
-          const key = await crypto.subtle.importKey(
-            "raw", keyBytes, { name: "AES-GCM" }, false, ["decrypt"]
-          );
-          decryptedBuffer = await crypto.subtle.decrypt(
-            { name: "AES-GCM", iv: iv },
-            key,
-            data
-          );
-        } else {
-          console.log("Using node-forge fallback for decryption.");
-          if (!window.forge) throw new Error("Cryptography fallback not loaded.");
-          
-          const keyBytesStr = forge.util.hexToBytes(hash);
-          const ivStr = u8ToBinaryString(iv);
-          
-          const tagLen = 16;
-          if (data.length < tagLen) throw new Error("Ciphertext too short.");
-          
-          const cipherBytesStr = u8ToBinaryString(data.subarray(0, data.length - tagLen));
-          const tagStr = u8ToBinaryString(data.subarray(data.length - tagLen));
-          
-          const decipher = forge.cipher.createDecipher('AES-GCM', keyBytesStr);
-          decipher.start({
-            iv: ivStr,
-            tagLength: 128,
-            tag: forge.util.createBuffer(tagStr)
-          });
-          decipher.update(forge.util.createBuffer(cipherBytesStr));
-          const pass = decipher.finish();
-          if (!pass) throw new Error("Decryption failed (authentication tag mismatch).");
-          
-          const decryptedString = decipher.output.getBytes();
-          decryptedBuffer = new Uint8Array(decryptedString.length);
-          for (let i = 0; i < decryptedString.length; i++) {
-            decryptedBuffer[i] = decryptedString.charCodeAt(i);
-          }
-        }
-        
-        setStatus("Transfer Complete!");
-        setPercent("100%");
-        setProgressWidth("100%");
-
-        const blob = new Blob([decryptedBuffer], { type: ${JSON.stringify(contentType)} });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = decodeURIComponent("${encodeURIComponent(fileName)}");
-
-        if (${isClipboard}) {
-          const text = new TextDecoder().decode(decryptedBuffer);
-          setClipText(text);
-          
-          document.getElementById('copyBtn').addEventListener('click', () => {
-            const btn = document.getElementById('copyBtn');
-            const doCopy = () => {
-              btn.innerText = 'Copied!';
-              btn.style.background = '#30D158';
-              window.close();
-            };
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-              navigator.clipboard.writeText(text).then(doCopy).catch(err => {
-                console.error('navigator.clipboard failed:', err);
-                btn.innerText = 'Copy Failed';
-                btn.style.background = '#FF453A';
-              });
-            } else {
-              console.error('Clipboard API unsupported');
-              btn.innerText = 'Clipboard API Unsupported';
-              btn.style.background = '#FF453A';
+            setStatus("Fetching...");
+            const response = await fetch('${downloadPath}' + window.location.search);
+            if (!response.ok) {
+              setStatus("Error: Link Expired");
+              setClipText("Error: Link expired or already copied.");
+              ${isClipboard ? 'window.close();' : ''}
+              finishDownload(attemptId);
+              return;
             }
-          });
-        } else {
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
 
-          // Security measure: Erase the decryption key from the address bar
-          window.history.replaceState({}, document.title, window.location.pathname);
+            const contentLength = response.headers.get('Content-Length');
+            const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
+            let loadedBytes = 0;
+            const chunks = [];
+            if (!response.body) throw new Error("ReadableStream not supported by browser");
+            const reader = response.body.getReader();
+
+            setStatus("Downloading...");
+            while(true) {
+              const {done, value} = await reader.read();
+              if (done) break;
+              chunks.push(value);
+              loadedBytes += value.length;
+              if (totalBytes > 0) {
+                const percent = Math.min(100, Math.round((loadedBytes / totalBytes) * 100));
+                setProgressWidth(percent + "%");
+                setPercent(percent + "%");
+              } else {
+                const mb = (loadedBytes / (1024 * 1024)).toFixed(1);
+                setPercent(mb + " MB");
+                setProgressWidth("100%");
+                if (progressEl) progressEl.style.animation = "pulse 1.5s ease-in-out infinite";
+              }
+            }
+
+            encryptedBuffer = new Uint8Array(loadedBytes);
+            let position = 0;
+            for (let chunk of chunks) {
+              encryptedBuffer.set(chunk, position);
+              position += chunk.length;
+            }
+            bufferedEncryptedData = encryptedBuffer;
+          }
+
+          setStatus("Decrypting...");
+          const iv = new Uint8Array(encryptedBuffer.slice(0, 12));
+          const data = new Uint8Array(encryptedBuffer.slice(12));
           
-          setStatus("Done");
-          const h1 = document.querySelector('h1');
-          if (h1) h1.innerText = "Download Started - Safe to close";
+          let decryptedBuffer;
+          if (window.crypto && window.crypto.subtle) {
+            const keyBytes = new Uint8Array(hash.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+            const key = await crypto.subtle.importKey(
+              "raw", keyBytes, { name: "AES-GCM" }, false, ["decrypt"]
+            );
+            decryptedBuffer = await crypto.subtle.decrypt(
+              { name: "AES-GCM", iv: iv },
+              key,
+              data
+            );
+          } else {
+            console.log("Using node-forge fallback for decryption.");
+            if (!window.forge) throw new Error("Cryptography fallback not loaded.");
+            
+            const keyBytesStr = forge.util.hexToBytes(hash);
+            const ivStr = u8ToBinaryString(iv);
+            
+            const tagLen = 16;
+            if (data.length < tagLen) throw new Error("Ciphertext too short.");
+            
+            const cipherBytesStr = u8ToBinaryString(data.subarray(0, data.length - tagLen));
+            const tagStr = u8ToBinaryString(data.subarray(data.length - tagLen));
+            
+            const decipher = forge.cipher.createDecipher('AES-GCM', keyBytesStr);
+            decipher.start({
+              iv: ivStr,
+              tagLength: 128,
+              tag: forge.util.createBuffer(tagStr)
+            });
+            decipher.update(forge.util.createBuffer(cipherBytesStr));
+            const pass = decipher.finish();
+            if (!pass) throw new Error("Decryption failed (authentication tag mismatch).");
+            
+            const decryptedString = decipher.output.getBytes();
+            decryptedBuffer = new Uint8Array(decryptedString.length);
+            for (let i = 0; i < decryptedString.length; i++) {
+              decryptedBuffer[i] = decryptedString.charCodeAt(i);
+            }
+          }
+          
+          setStatus("Transfer Complete!");
+          setPercent("100%");
+          setProgressWidth("100%");
+
+          const blob = new Blob([decryptedBuffer], { type: ${JSON.stringify(contentType)} });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = decodeURIComponent("${encodeURIComponent(fileName)}");
+
+          if (${isClipboard}) {
+            const text = new TextDecoder().decode(decryptedBuffer);
+            setClipText(text);
+            
+            document.getElementById('copyBtn').addEventListener('click', () => {
+              const btn = document.getElementById('copyBtn');
+              const doCopy = () => {
+                btn.innerText = 'Copied!';
+                btn.style.background = '#30D158';
+                window.close();
+              };
+              if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(doCopy).catch(err => {
+                  console.error('navigator.clipboard failed:', err);
+                  btn.innerText = 'Copy Failed';
+                  btn.style.background = '#FF453A';
+                });
+              } else {
+                console.error('Clipboard API unsupported');
+                btn.innerText = 'Clipboard API Unsupported';
+                btn.style.background = '#FF453A';
+              }
+            });
+          } else {
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          }
+
+            // Security measure: Erase the decryption key from the address bar
+            window.history.replaceState({}, document.title, window.location.pathname);
+            
+            setStatus("Done");
+            const h1 = document.querySelector('h1');
+            if (h1) h1.innerText = "Download Started - Safe to close";
+          } catch (err) {
+            setStatus("Decryption Failed");
+            setClipText("Error: Decryption failed or link expired.");
+            if (statusEl) statusEl.style.color = "#FF453A";
+            console.error(err);
+            ${isClipboard ? 'window.close();' : ''}
+          } finally {
+            finishDownload(attemptId);
+          }
         }
-      } catch (err) {
-        setStatus("Decryption Failed");
-        setClipText("Error: Decryption failed or link expired.");
-        if (statusEl) statusEl.style.color = "#FF453A";
-        console.error(err);
-        ${isClipboard ? 'window.close();' : ''}
-      }
+
+      window.addEventListener('hashchange', () => {
+        if (downloadInProgress) {
+          pendingHashChange = true;
+        } else {
+          startDownload();
+        }
+      });
+      startDownload();
     })();
   </script>
 </body>

@@ -36,6 +36,27 @@ test('Server Core', async (t) => {
     await shutdown();
   });
 
+  await t.test('GET / includes hashchange listener for late decryption key addition (#133)', async () => {
+    const filePath = createTempFile(1024, '.txt');
+    const { server, shutdown } = await createServer({
+      filePath,
+      port: 0,
+      onTransferComplete: () => {},
+      onTransferError: () => {}
+    });
+
+    const port = server.address().port;
+    const htmlRes = await httpClient(`http://127.0.0.1:${port}/`);
+    const htmlStr = htmlRes.body.toString();
+
+    assert.match(htmlStr, /window\.addEventListener\('hashchange'/);
+    assert.match(htmlStr, /let downloadInProgress = false;/);
+    assert.match(htmlStr, /let pendingHashChange = false;/);
+    assert.match(htmlStr, /function finishDownload/);
+
+    await shutdown();
+  });
+
   await t.test('GET / injects the detected MIME type for single-file transfers', async () => {
     const filePath = createTempFile(1024, '.pdf');
     const { server, shutdown, downloadPath } = await createServer({

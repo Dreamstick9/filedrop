@@ -213,7 +213,7 @@ function handleRequest(req, res) {
       return res;
     }
 
-    (async function() {
+    (function() {
       const statusEl = document.getElementById('statusText');
       const percentEl = document.getElementById('percentText');
       const progressEl = document.getElementById('progress');
@@ -223,96 +223,46 @@ function handleRequest(req, res) {
       const setPercent = (txt) => { if (percentEl) percentEl.innerText = txt; };
       const setProgressWidth = (width) => { if (progressEl) progressEl.style.width = width; };
 
-      try {
+      let downloadInProgress = false;
+      let pendingHashChange = false;
+      let bufferedEncryptedData = null;
+      let activeWs = null;
+
+      function finishDownload(wsInstance) {
+        if (wsInstance && activeWs && activeWs !== wsInstance) {
+          return;
+        }
+        if (wsInstance && activeWs === wsInstance) {
+          activeWs = null;
+        }
+        downloadInProgress = false;
+        if (pendingHashChange && window.location.hash.slice(1)) {
+          pendingHashChange = false;
+          startDownload();
+        }
+      }
+
+      async function startDownload() {
+        if (downloadInProgress) {
+          pendingHashChange = true;
+          return;
+        }
+
         const hash = window.location.hash.slice(1);
         if (!hash) {
           setStatus("Error: Missing Key");
           return;
         }
 
-        const roomId = "${roomId}";
-        const rp = new URLSearchParams(window.location.search).get('rp') || '';
+        downloadInProgress = true;
+        pendingHashChange = false;
+        if (statusEl) statusEl.style.color = "";
 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = protocol + '//' + window.location.host;
-        const ws = new WebSocket(wsUrl);
-
-        let chunks = [];
-        let totalBytes = 0;
-        let loadedBytes = 0;
-        let filename = 'relayed-download';
-
-        ws.onopen = () => {
-          setStatus("Joining room...");
-          ws.send(JSON.stringify({
-            type: 'join',
-            roomId: roomId,
-            role: 'receiver',
-            password: rp
-          }));
-        };
-
-        ws.onclose = () => {
-          if (statusEl.innerText === "Connecting to relay..." || statusEl.innerText === "Joining room...") {
-            setStatus("Disconnected from relay");
-          }
-        };
-
-        ws.onmessage = async (event) => {
-          const msg = JSON.parse(event.data);
-          if (msg.type === 'error') {
-            setStatus("Error: " + msg.message);
-            ws.close();
-            return;
-          }
-          if (msg.type === 'join-result') {
-            if (msg.success) {
-              setStatus("Waiting for sender...");
-            } else {
-              setStatus("Join failed");
-              ws.close();
-            }
-            return;
-          }
-          if (msg.type === 'meta') {
-            totalBytes = msg.size || 0;
-            filename = msg.filename || filename;
-            if (titleEl) titleEl.innerText = filename;
-            setStatus("Downloading (Relayed)...");
-            return;
-          }
-          if (msg.type === 'relay-data') {
-            const raw = atob(msg.data);
-            const chunk = new Uint8Array(raw.length);
-            for (let i = 0; i < raw.length; i++) {
-              chunk[i] = raw.charCodeAt(i);
-            }
-            chunks.push(chunk);
-            loadedBytes += chunk.length;
-
-            if (totalBytes > 0) {
-              const percent = Math.min(100, Math.round((loadedBytes / totalBytes) * 100));
-              setProgressWidth(percent + "%");
-              setPercent(percent + "%");
-            } else {
-              const mb = (loadedBytes / (1024 * 1024)).toFixed(1);
-              setPercent(mb + " MB");
-              setProgressWidth("100%");
-              if (progressEl) progressEl.style.animation = "pulse 1.5s ease-in-out infinite";
-            }
-            return;
-          }
-          if (msg.type === 'transfer-complete') {
-            ws.send(JSON.stringify({ type: 'transfer-complete-ack' }));
-            setTimeout(() => ws.close(), 100);
+        if (bufferedEncryptedData) {
+          try {
             setStatus("Decrypting...");
-
-            const encryptedBuffer = new Uint8Array(loadedBytes);
-            let position = 0;
-            for (let chunk of chunks) {
-              encryptedBuffer.set(chunk, position);
-              position += chunk.length;
-            }
+            const encryptedBuffer = bufferedEncryptedData.encryptedBuffer;
+            const filename = bufferedEncryptedData.filename;
 
             const iv = new Uint8Array(encryptedBuffer.slice(0, 12));
             const data = new Uint8Array(encryptedBuffer.slice(12));
@@ -370,13 +320,199 @@ function handleRequest(req, res) {
             window.history.replaceState({}, document.title, window.location.pathname);
             setStatus("Done");
             if (titleEl) titleEl.innerText = "Download Started - Safe to close";
+          } catch (err) {
+            setStatus("Decryption Failed");
+            if (statusEl) statusEl.style.color = "#FF453A";
+            console.error(err);
+          } finally {
+            finishDownload(null);
           }
+          return;
         }
-      } catch (err) {
-        setStatus("Decryption Failed");
-        if (statusEl) statusEl.style.color = "#FF453A";
-        console.error(err);
+
+        try {
+          const roomId = "${roomId}";
+          const rp = new URLSearchParams(window.location.search).get('rp') || '';
+
+          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          const wsUrl = protocol + '//' + window.location.host;
+          const ws = new WebSocket(wsUrl);
+          activeWs = ws;
+
+          let chunks = [];
+          let totalBytes = 0;
+          let loadedBytes = 0;
+          let filename = 'relayed-download';
+
+          ws.onopen = () => {
+            if (activeWs !== ws) return;
+            setStatus("Joining room...");
+            ws.send(JSON.stringify({
+              type: 'join',
+              roomId: roomId,
+              role: 'receiver',
+              password: rp
+            }));
+          };
+
+          ws.onclose = () => {
+            if (activeWs !== ws) return;
+            if (statusEl.innerText !== "Done" && statusEl.innerText !== "Transfer Complete!") {
+              if (statusEl.innerText === "Connecting to relay..." || statusEl.innerText === "Joining room...") {
+                setStatus("Disconnected from relay");
+              } else if (!statusEl.innerText.startsWith("Error:") && statusEl.innerText !== "Decryption Failed") {
+                setStatus("Disconnected from relay");
+              }
+            }
+            finishDownload(ws);
+          };
+
+          ws.onmessage = async (event) => {
+            if (activeWs !== ws) return;
+            try {
+              const msg = JSON.parse(event.data);
+              if (msg.type === 'error') {
+                setStatus("Error: " + msg.message);
+                ws.close();
+                finishDownload(ws);
+                return;
+              }
+              if (msg.type === 'join-result') {
+                if (msg.success) {
+                  setStatus("Waiting for sender...");
+                } else {
+                  setStatus("Join failed");
+                  ws.close();
+                  finishDownload(ws);
+                }
+                return;
+              }
+              if (msg.type === 'meta') {
+                totalBytes = msg.size || 0;
+                filename = msg.filename || filename;
+                if (titleEl) titleEl.innerText = filename;
+                setStatus("Downloading (Relayed)...");
+                return;
+              }
+              if (msg.type === 'relay-data') {
+                const raw = atob(msg.data);
+                const chunk = new Uint8Array(raw.length);
+                for (let i = 0; i < raw.length; i++) {
+                  chunk[i] = raw.charCodeAt(i);
+                }
+                chunks.push(chunk);
+                loadedBytes += chunk.length;
+
+                if (totalBytes > 0) {
+                  const percent = Math.min(100, Math.round((loadedBytes / totalBytes) * 100));
+                  setProgressWidth(percent + "%");
+                  setPercent(percent + "%");
+                } else {
+                  const mb = (loadedBytes / (1024 * 1024)).toFixed(1);
+                  setPercent(mb + " MB");
+                  setProgressWidth("100%");
+                  if (progressEl) progressEl.style.animation = "pulse 1.5s ease-in-out infinite";
+                }
+                return;
+              }
+              if (msg.type === 'transfer-complete') {
+                ws.send(JSON.stringify({ type: 'transfer-complete-ack' }));
+                setTimeout(() => ws.close(), 100);
+                setStatus("Decrypting...");
+
+                const encryptedBuffer = new Uint8Array(loadedBytes);
+                let position = 0;
+                for (let chunk of chunks) {
+                  encryptedBuffer.set(chunk, position);
+                  position += chunk.length;
+                }
+                bufferedEncryptedData = { encryptedBuffer: encryptedBuffer, filename: filename };
+
+                const iv = new Uint8Array(encryptedBuffer.slice(0, 12));
+                const data = new Uint8Array(encryptedBuffer.slice(12));
+
+                let decryptedBuffer;
+                if (window.crypto && window.crypto.subtle) {
+                  const keyBytes = new Uint8Array(hash.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+                  const key = await crypto.subtle.importKey(
+                    "raw", keyBytes, { name: "AES-GCM" }, false, ["decrypt"]
+                  );
+                  decryptedBuffer = await crypto.subtle.decrypt(
+                    { name: "AES-GCM", iv: iv },
+                    key,
+                    data
+                  );
+                } else {
+                  if (!window.forge) throw new Error("Fallback crypto not loaded.");
+                  const keyBytesStr = forge.util.hexToBytes(hash);
+                  const ivStr = u8ToBinaryString(iv);
+                  const tagLen = 16;
+                  const cipherBytesStr = u8ToBinaryString(data.subarray(0, data.length - tagLen));
+                  const tagStr = u8ToBinaryString(data.subarray(data.length - tagLen));
+
+                  const decipher = forge.cipher.createDecipher('AES-GCM', keyBytesStr);
+                  decipher.start({
+                    iv: ivStr,
+                    tagLength: 128,
+                    tag: forge.util.createBuffer(tagStr)
+                  });
+                  decipher.update(forge.util.createBuffer(cipherBytesStr));
+                  const pass = decipher.finish();
+                  if (!pass) throw new Error("Decryption failed (auth tag mismatch).");
+
+                  const decryptedString = decipher.output.getBytes();
+                  decryptedBuffer = new Uint8Array(decryptedString.length);
+                  for (let i = 0; i < decryptedString.length; i++) {
+                    decryptedBuffer[i] = decryptedString.charCodeAt(i);
+                  }
+                }
+
+                setStatus("Transfer Complete!");
+                setPercent("100%");
+                setProgressWidth("100%");
+
+                const blob = new Blob([decryptedBuffer], { type: 'application/octet-stream' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                window.history.replaceState({}, document.title, window.location.pathname);
+                setStatus("Done");
+                if (titleEl) titleEl.innerText = "Download Started - Safe to close";
+                finishDownload(ws);
+              }
+            } catch (err) {
+              if (activeWs !== ws) return;
+              setStatus("Decryption Failed");
+              if (statusEl) statusEl.style.color = "#FF453A";
+              console.error(err);
+              if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.close();
+              }
+              finishDownload(ws);
+            }
+          };
+        } catch (err) {
+          setStatus("Decryption Failed");
+          if (statusEl) statusEl.style.color = "#FF453A";
+          console.error(err);
+          finishDownload(null);
+        }
       }
+
+      window.addEventListener('hashchange', () => {
+        if (downloadInProgress) {
+          pendingHashChange = true;
+        } else {
+          startDownload();
+        }
+      });
+      startDownload();
     })();
   </script>
 </body>
