@@ -212,9 +212,21 @@ async function createServer({
       };
 
       let downloadInProgress = false;
+      let pendingHashChange = false;
+
+      function finishDownload() {
+        downloadInProgress = false;
+        if (pendingHashChange && window.location.hash.slice(1)) {
+          pendingHashChange = false;
+          startDownload();
+        }
+      }
 
       async function startDownload() {
-        if (downloadInProgress) return;
+        if (downloadInProgress) {
+          pendingHashChange = true;
+          return;
+        }
 
         const hash = window.location.hash.slice(1);
         if (!hash) {
@@ -224,6 +236,7 @@ async function createServer({
         }
 
         downloadInProgress = true;
+        pendingHashChange = false;
         if (statusEl) statusEl.style.color = "";
 
         try {
@@ -233,7 +246,7 @@ async function createServer({
             setStatus("Error: Link Expired");
             setClipText("Error: Link expired or already copied.");
             ${isClipboard ? 'window.close();' : ''}
-            downloadInProgress = false;
+            finishDownload();
             return;
           }
 
@@ -360,18 +373,24 @@ async function createServer({
             setStatus("Done");
             const h1 = document.querySelector('h1');
             if (h1) h1.innerText = "Download Started - Safe to close";
+          } catch (err) {
+            setStatus("Decryption Failed");
+            setClipText("Error: Decryption failed or link expired.");
+            if (statusEl) statusEl.style.color = "#FF453A";
+            console.error(err);
+            ${isClipboard ? 'window.close();' : ''}
+          } finally {
+            finishDownload();
           }
-        } catch (err) {
-          setStatus("Decryption Failed");
-          setClipText("Error: Decryption failed or link expired.");
-          if (statusEl) statusEl.style.color = "#FF453A";
-          console.error(err);
-          ${isClipboard ? 'window.close();' : ''}
-          downloadInProgress = false;
         }
-      }
 
-      window.addEventListener('hashchange', startDownload);
+      window.addEventListener('hashchange', () => {
+        if (downloadInProgress) {
+          pendingHashChange = true;
+        } else {
+          startDownload();
+        }
+      });
       startDownload();
     })();
   </script>

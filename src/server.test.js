@@ -49,8 +49,10 @@ test('Server Core', async (t) => {
     const htmlRes = await httpClient(`http://127.0.0.1:${port}/`);
     const htmlStr = htmlRes.body.toString();
 
-    assert.match(htmlStr, /window\.addEventListener\('hashchange',\s*startDownload\)/);
+    assert.match(htmlStr, /window\.addEventListener\('hashchange'/);
     assert.match(htmlStr, /let downloadInProgress = false;/);
+    assert.match(htmlStr, /let pendingHashChange = false;/);
+    assert.match(htmlStr, /function finishDownload\(\)/);
 
     await shutdown();
   });
