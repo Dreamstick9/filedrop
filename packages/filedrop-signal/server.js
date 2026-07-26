@@ -225,6 +225,7 @@ function handleRequest(req, res) {
 
       let downloadInProgress = false;
       let pendingHashChange = false;
+      let bufferedEncryptedData = null;
 
       function finishDownload() {
         downloadInProgress = false;
@@ -249,6 +250,78 @@ function handleRequest(req, res) {
         downloadInProgress = true;
         pendingHashChange = false;
         if (statusEl) statusEl.style.color = "";
+
+        if (bufferedEncryptedData) {
+          try {
+            setStatus("Decrypting...");
+            const encryptedBuffer = bufferedEncryptedData.encryptedBuffer;
+            const filename = bufferedEncryptedData.filename;
+
+            const iv = new Uint8Array(encryptedBuffer.slice(0, 12));
+            const data = new Uint8Array(encryptedBuffer.slice(12));
+
+            let decryptedBuffer;
+            if (window.crypto && window.crypto.subtle) {
+              const keyBytes = new Uint8Array(hash.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+              const key = await crypto.subtle.importKey(
+                "raw", keyBytes, { name: "AES-GCM" }, false, ["decrypt"]
+              );
+              decryptedBuffer = await crypto.subtle.decrypt(
+                { name: "AES-GCM", iv: iv },
+                key,
+                data
+              );
+            } else {
+              if (!window.forge) throw new Error("Fallback crypto not loaded.");
+              const keyBytesStr = forge.util.hexToBytes(hash);
+              const ivStr = u8ToBinaryString(iv);
+              const tagLen = 16;
+              const cipherBytesStr = u8ToBinaryString(data.subarray(0, data.length - tagLen));
+              const tagStr = u8ToBinaryString(data.subarray(data.length - tagLen));
+
+              const decipher = forge.cipher.createDecipher('AES-GCM', keyBytesStr);
+              decipher.start({
+                iv: ivStr,
+                tagLength: 128,
+                tag: forge.util.createBuffer(tagStr)
+              });
+              decipher.update(forge.util.createBuffer(cipherBytesStr));
+              const pass = decipher.finish();
+              if (!pass) throw new Error("Decryption failed (auth tag mismatch).");
+
+              const decryptedString = decipher.output.getBytes();
+              decryptedBuffer = new Uint8Array(decryptedString.length);
+              for (let i = 0; i < decryptedString.length; i++) {
+                decryptedBuffer[i] = decryptedString.charCodeAt(i);
+              }
+            }
+
+            setStatus("Transfer Complete!");
+            setPercent("100%");
+            setProgressWidth("100%");
+
+            const blob = new Blob([decryptedBuffer], { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            window.history.replaceState({}, document.title, window.location.pathname);
+            setStatus("Done");
+            if (titleEl) titleEl.innerText = "Download Started - Safe to close";
+          } catch (err) {
+            setStatus("Decryption Failed");
+            if (statusEl) statusEl.style.color = "#FF453A";
+            console.error(err);
+          } finally {
+            finishDownload();
+          }
+          return;
+        }
 
         try {
           const roomId = "${roomId}";
@@ -342,6 +415,7 @@ function handleRequest(req, res) {
                   encryptedBuffer.set(chunk, position);
                   position += chunk.length;
                 }
+                bufferedEncryptedData = { encryptedBuffer: encryptedBuffer, filename: filename };
 
                 const iv = new Uint8Array(encryptedBuffer.slice(0, 12));
                 const data = new Uint8Array(encryptedBuffer.slice(12));

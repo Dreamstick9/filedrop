@@ -213,6 +213,7 @@ async function createServer({
 
       let downloadInProgress = false;
       let pendingHashChange = false;
+      let bufferedEncryptedData = null;
 
       function finishDownload() {
         downloadInProgress = false;
@@ -240,49 +241,55 @@ async function createServer({
         if (statusEl) statusEl.style.color = "";
 
         try {
-          setStatus("Fetching...");
-          const response = await fetch('${downloadPath}' + window.location.search);
-          if (!response.ok) {
-            setStatus("Error: Link Expired");
-            setClipText("Error: Link expired or already copied.");
-            ${isClipboard ? 'window.close();' : ''}
-            finishDownload();
-            return;
-          }
-
-          const contentLength = response.headers.get('Content-Length');
-          const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
-          let loadedBytes = 0;
-          const chunks = [];
-          if (!response.body) throw new Error("ReadableStream not supported by browser");
-          const reader = response.body.getReader();
-
-          setStatus("Downloading...");
-          while(true) {
-            const {done, value} = await reader.read();
-            if (done) break;
-            chunks.push(value);
-            loadedBytes += value.length;
-            if (totalBytes > 0) {
-              const percent = Math.min(100, Math.round((loadedBytes / totalBytes) * 100));
-              setProgressWidth(percent + "%");
-              setPercent(percent + "%");
-            } else {
-              const mb = (loadedBytes / (1024 * 1024)).toFixed(1);
-              setPercent(mb + " MB");
-              setProgressWidth("100%");
-              if (progressEl) progressEl.style.animation = "pulse 1.5s ease-in-out infinite";
+          let encryptedBuffer;
+          if (bufferedEncryptedData) {
+            encryptedBuffer = bufferedEncryptedData;
+          } else {
+            setStatus("Fetching...");
+            const response = await fetch('${downloadPath}' + window.location.search);
+            if (!response.ok) {
+              setStatus("Error: Link Expired");
+              setClipText("Error: Link expired or already copied.");
+              ${isClipboard ? 'window.close();' : ''}
+              finishDownload();
+              return;
             }
+
+            const contentLength = response.headers.get('Content-Length');
+            const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
+            let loadedBytes = 0;
+            const chunks = [];
+            if (!response.body) throw new Error("ReadableStream not supported by browser");
+            const reader = response.body.getReader();
+
+            setStatus("Downloading...");
+            while(true) {
+              const {done, value} = await reader.read();
+              if (done) break;
+              chunks.push(value);
+              loadedBytes += value.length;
+              if (totalBytes > 0) {
+                const percent = Math.min(100, Math.round((loadedBytes / totalBytes) * 100));
+                setProgressWidth(percent + "%");
+                setPercent(percent + "%");
+              } else {
+                const mb = (loadedBytes / (1024 * 1024)).toFixed(1);
+                setPercent(mb + " MB");
+                setProgressWidth("100%");
+                if (progressEl) progressEl.style.animation = "pulse 1.5s ease-in-out infinite";
+              }
+            }
+
+            encryptedBuffer = new Uint8Array(loadedBytes);
+            let position = 0;
+            for (let chunk of chunks) {
+              encryptedBuffer.set(chunk, position);
+              position += chunk.length;
+            }
+            bufferedEncryptedData = encryptedBuffer;
           }
 
           setStatus("Decrypting...");
-          const encryptedBuffer = new Uint8Array(loadedBytes);
-          let position = 0;
-          for (let chunk of chunks) {
-            encryptedBuffer.set(chunk, position);
-            position += chunk.length;
-          }
-          
           const iv = new Uint8Array(encryptedBuffer.slice(0, 12));
           const data = new Uint8Array(encryptedBuffer.slice(12));
           
