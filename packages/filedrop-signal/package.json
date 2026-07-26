@@ -3,8 +3,12 @@
   "version": "1.0.0",
   "description": "WebSocket signaling and HTTP relay server for filedrop WebRTC mesh",
   "main": "server.js",
+  "bin": {
+    "filedrop-signal": "server.js"
+  },
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test server.test.js"
   },
   "dependencies": {
     "ws": "^8.18.0",

@@ -337,34 +337,14 @@ async function createServer({
               };
               if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(text).then(doCopy).catch(err => {
-                  console.error('navigator.clipboard failed, trying fallback:', err);
-                  fallbackCopy();
-                });
-              } else {
-                fallbackCopy();
-              }
-              function fallbackCopy() {
-                const dummyTextArea = document.createElement('textarea');
-                dummyTextArea.value = text;
-                dummyTextArea.style.position = 'fixed';
-                dummyTextArea.style.opacity = '0';
-                document.body.appendChild(dummyTextArea);
-                dummyTextArea.focus();
-                dummyTextArea.select();
-                try {
-                  const successful = document.execCommand('copy');
-                  if (successful) {
-                    doCopy();
-                  } else {
-                    btn.innerText = 'Copy Failed';
-                    btn.style.background = '#FF453A';
-                  }
-                } catch (err) {
-                  console.error('Fallback copy failed:', err);
+                  console.error('navigator.clipboard failed:', err);
                   btn.innerText = 'Copy Failed';
                   btn.style.background = '#FF453A';
-                }
-                document.body.removeChild(dummyTextArea);
+                });
+              } else {
+                console.error('Clipboard API unsupported');
+                btn.innerText = 'Clipboard API Unsupported';
+                btn.style.background = '#FF453A';
               }
             });
           } else {
@@ -372,6 +352,7 @@ async function createServer({
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+          }
 
             // Security measure: Erase the decryption key from the address bar
             window.history.replaceState({}, document.title, window.location.pathname);
@@ -738,31 +719,38 @@ function bind(lifecycle) {
 
   lifecycle.on('server:start', async (params) => {
     try {
-      const result = await module.exports.createServer({
-        ...params,
-        onTransferStart: (currentCount, limit) => {
-          lifecycle.emit('server:transfer-start', { currentCount, limit });
-          if (typeof params.onTransferStart === 'function') {
-            params.onTransferStart(currentCount, limit);
-          }
-        },
-        onTransferComplete: (completedCount, downloadLimit) => {
-          lifecycle.emit('server:transfer-complete', { completedCount, downloadLimit });
-          if (typeof params.onTransferComplete === 'function') {
-            params.onTransferComplete(completedCount, downloadLimit);
-          }
-        },
-        onTransferError: (err) => {
-          lifecycle.emit('server:transfer-error', err);
-          if (typeof params.onTransferError === 'function') {
-            params.onTransferError(err);
-          }
+      const { LanTransport } = require('./transport');
+      const transport = new LanTransport();
+
+      transport.on('transfer-start', ({ currentCount, limit }) => {
+        lifecycle.emit('server:transfer-start', { currentCount, limit });
+        if (typeof params.onTransferStart === 'function') {
+          params.onTransferStart(currentCount, limit);
         }
       });
 
+      transport.on('transfer-complete', ({ completedCount, downloadLimit }) => {
+        lifecycle.emit('server:transfer-complete', { completedCount, downloadLimit });
+        if (typeof params.onTransferComplete === 'function') {
+          params.onTransferComplete(completedCount, downloadLimit);
+        }
+      });
+
+      transport.on('transfer-error', (err) => {
+        lifecycle.emit('server:transfer-error', err);
+        if (typeof params.onTransferError === 'function') {
+          params.onTransferError(err);
+        }
+      });
+
+      const result = await transport.start(params);
       activeShutdown = result.shutdown;
 
-      lifecycle.emit('server:started', { keyHex: result.keyHex, downloadPath: result.downloadPath });
+      lifecycle.emit('server:started', {
+        keyHex: result.keyHex,
+        downloadPath: result.downloadPath,
+        shareUrl: result.shareUrl
+      });
     } catch (err) {
       lifecycle.emit('server:error', err);
     }
