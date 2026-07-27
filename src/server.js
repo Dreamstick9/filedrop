@@ -170,6 +170,44 @@ async function createServer({
     .status-row { display: flex; justify-content: space-between; font-size: 0.85rem; color: #888; }
     @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
 
+    /* Custom cursor styles */
+    body.custom-cursor-active { cursor: none; }
+    .cursor-dot {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #0A84FF;
+      pointer-events: none;
+      z-index: 9999;
+      transform: translate(-50%, -50%);
+      transition: background 0.2s ease;
+    }
+    .cursor-ring {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 2px solid rgba(10,132,255,0.6);
+      pointer-events: none;
+      z-index: 9998;
+      transform: translate(-50%, -50%);
+      transition: width 0.2s ease, height 0.2s ease, border-color 0.2s ease;
+    }
+    .cursor-ring.cursor-hover {
+      width: 48px;
+      height: 48px;
+      border-color: rgba(94,92,230,0.8);
+      background: rgba(94,92,230,0.1);
+    }
+    .cursor-ring.cursor-click {
+      transform: translate(-50%, -50%) scale(0.8);
+    }
+
     /* Scroll-to-top button */
     #scrollTopBtn {
       position: fixed;
@@ -209,8 +247,9 @@ async function createServer({
   </style>
 </head>
 <body>
-  <div class="container">
-    ${isClipboard ? `
+  <div class="cursor-dot" id="cursorDot"></div>
+  <div class="cursor-ring" id="cursorRing"></div>
+  <div class="container">    ${isClipboard ? `
       <h1 style="font-size: 1.2rem; margin-bottom: 20px; color: #EAEAEA;">Clipboard Received</h1>
       <textarea id="clipText" readonly style="width:100%; height:150px; font-family:monospace; padding:12px; border-radius:8px; border:none; background:rgba(255,255,255,0.1); color:white; resize:none; box-sizing:border-box; outline:none; font-size:0.95rem; line-height:1.4;">Loading...</textarea>
       <button id="copyBtn" style="margin-top:20px; padding:12px 24px; border-radius:8px; border:none; background:#0A84FF; color:white; font-weight:bold; font-size:16px; cursor:pointer; width:100%;">Copy to Clipboard</button>
@@ -222,8 +261,56 @@ async function createServer({
         <span id="percentText">0%</span>
       </div>
     `}
-</div>
+  </div>
   <button id="scrollTopBtn" aria-label="Scroll to top" title="Scroll to top">&#8593;</button>
+  <script>
+    (function() {
+      var isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+      if (isTouch) return; // Skip custom cursor on touch devices
+
+      document.body.classList.add('custom-cursor-active');
+
+      var dot = document.getElementById('cursorDot');
+      var ring = document.getElementById('cursorRing');
+      var ringX = 0, ringY = 0;
+
+      document.addEventListener('mousemove', function(e) {
+        dot.style.left = e.clientX + 'px';
+        dot.style.top = e.clientY + 'px';
+        ringX = e.clientX;
+        ringY = e.clientY;
+      });
+
+      function animateRing() {
+        var currentLeft = parseFloat(ring.style.left) || ringX;
+        var currentTop = parseFloat(ring.style.top) || ringY;
+        var nextLeft = currentLeft + (ringX - currentLeft) * 0.15;
+        var nextTop = currentTop + (ringY - currentTop) * 0.15;
+        ring.style.left = nextLeft + 'px';
+        ring.style.top = nextTop + 'px';
+        requestAnimationFrame(animateRing);
+      }
+      requestAnimationFrame(animateRing);
+
+      document.addEventListener('mousedown', function() {
+        ring.classList.add('cursor-click');
+      });
+      document.addEventListener('mouseup', function() {
+        ring.classList.remove('cursor-click');
+      });
+
+      var hoverTargets = document.querySelectorAll('button, a, textarea, input, [role="button"]');
+      hoverTargets.forEach(function(el) {
+        el.addEventListener('mouseenter', function() {
+          ring.classList.add('cursor-hover');
+        });
+        el.addEventListener('mouseleave', function() {
+          ring.classList.remove('cursor-hover');
+        });
+      });
+    })();
+  </script>
+  <script src="/forge.min.js"></script>
   <script>
     (function() {
       var scrollBtn = document.getElementById('scrollTopBtn');
