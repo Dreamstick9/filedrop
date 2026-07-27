@@ -16,6 +16,7 @@ const REPOSITORY_URL = repositoryUrl
 
 const {
   DEFAULT_TIMEOUT_SECONDS,
+  DEFAULT_TRANSFER_TIMEOUT_SECONDS,
   DEFAULT_SHUTDOWN_GRACE_MS,
   DEFAULT_RATE_LIMIT_WINDOW_MS,
   DEFAULT_RATE_LIMIT_MAX,
@@ -40,6 +41,7 @@ Options:
   -p, --port <n>         Specific port to bind (default: auto 8000-8999)
   -b, --bind <ip>        Network interface IP to use (default: auto-detect)
   -t, --timeout <s>      Seconds to wait for a connection (default: ${DEFAULT_TIMEOUT_SECONDS})
+  --transfer-timeout <s> Seconds allowed for an active transfer (default: ${DEFAULT_TRANSFER_TIMEOUT_SECONDS})
   --token [token]        Require a token parameter (?t=<token>) to access links. If no value is provided, a random 16-character hex token will be generated.
   --max-connections <n>  Max concurrent TCP connections (default: ${DEFAULT_MAX_CONNECTIONS}, 0 to disable)
   --no-warn-sensitive    Suppress warning prompt before serving sensitive files
@@ -54,7 +56,8 @@ Options:
   --qr-compact           Print QR code without surrounding metadata box
   --no-mdns              Disable mDNS broadcasting
   --mesh / --no-mesh     Enable or disable WebRTC mesh transport (default: auto)
-  --signal-url <url>     Signaling server URL for WebRTC mesh fallback
+  --signal-url <url>, --mesh-signal <url>
+                         Signaling server URL for WebRTC mesh fallback (overrides FILEDROP_MESH_SIGNAL_URL)
   --no-relay             Disable relay fallback for symmetric NAT
   --relay-password <sec> Required shared secret before the relay accepts frames
   --ice-timeout <s>      Seconds to wait for ICE connection before relay fallback (default: ${DEFAULT_ICE_TIMEOUT_SECONDS})
@@ -63,6 +66,7 @@ Options:
   --no-color             Force no-color output (also respects NO_COLOR env var)
   --version              Print version and exit
   --help, -h             Print help and exit
+  --download-limit <n>   Number of allowed downloads before closing (default: 1 in non-interactive mode)
   --mesh                 Enable mesh (cross-network) mode; shows a 6-char room code  
   --signal-host <url>    Signaling server base URL (default: https://signal.filedrop.local)  
 
@@ -72,7 +76,7 @@ filedrop v${VERSION} — ${REPOSITORY_URL}`);
 function parseArgs(argv) {
   const args = minimist(argv.slice(2), {
     boolean: ['qr-compact', 'verbose', 'version', 'help', 'qr', 'mdns', 'clipboard', 'warn-sensitive', 'relay'],
-    string: ['port', 'bind', 'timeout', 'rate-limit-window', 'rate-limit-max', 'name', 'color', 'shutdown-grace-ms', 'token', 'max-connections', 'signal-url', 'signal-host', 'relay-password', 'ice-timeout'],
+    string: ['port', 'bind', 'timeout', 'transfer-timeout', 'rate-limit-window', 'rate-limit-max', 'name', 'color', 'shutdown-grace-ms', 'token', 'max-connections', 'signal-url', 'mesh-signal', 'signal-host', 'relay-password', 'ice-timeout', 'download-limit'],
     alias: {
       p: "port",
       b: "bind",
@@ -88,6 +92,7 @@ function parseArgs(argv) {
       relay: true,
       'warn-sensitive': true,
       timeout: String(DEFAULT_TIMEOUT_SECONDS),
+      'transfer-timeout': String(DEFAULT_TRANSFER_TIMEOUT_SECONDS),
       'ice-timeout': String(DEFAULT_ICE_TIMEOUT_SECONDS),
       'rate-limit-window': String(DEFAULT_RATE_LIMIT_WINDOW_MS),
       'rate-limit-max': String(DEFAULT_RATE_LIMIT_MAX),
@@ -191,9 +196,29 @@ function parseArgs(argv) {
     }
   }
 
+  let downloadLimit = undefined;
+  if (args['download-limit'] !== undefined) {
+    const downloadLimitRaw = args['download-limit'];
+    downloadLimit = Number(downloadLimitRaw);
+    if (!/^\d+$/.test(downloadLimitRaw) || !Number.isSafeInteger(downloadLimit) || downloadLimit <= 0) {
+      console.error("filedrop: error: --download-limit must be a positive integer");
+      console.error("Run 'filedrop --help' for usage.");
+      process.exit(1);
+    }
+  }
+
   let timeout = parseInt(args.timeout, 10);
   if (isNaN(timeout) || timeout <= 0) {
     console.error("filedrop: error: --timeout must be a positive integer");
+    console.error("Run 'filedrop --help' for usage.");
+    process.exit(1);
+  }
+
+  const transferTimeoutRaw = String(args['transfer-timeout']);
+  const transferTimeout = Number(transferTimeoutRaw);
+  const MAX_TRANSFER_TIMEOUT_SEC = 2_147_483;
+  if (!/^\d+$/.test(transferTimeoutRaw) || !Number.isSafeInteger(transferTimeout) || transferTimeout <= 0 || transferTimeout > MAX_TRANSFER_TIMEOUT_SEC) {
+    console.error(`filedrop: error: --transfer-timeout must be a positive integer <= ${MAX_TRANSFER_TIMEOUT_SEC}`);
     console.error("Run 'filedrop --help' for usage.");
     process.exit(1);
   }
@@ -238,8 +263,10 @@ function parseArgs(argv) {
     process.exit(1);
   }
 
-  if (args.mesh && !args['signal-url']) {
-    console.error('filedrop: error: --signal-url is required when using --mesh');
+  const signalUrl = args['mesh-signal'] || args['signal-url'] || process.env.FILEDROP_MESH_SIGNAL_URL || null;
+
+  if (args.mesh && !signalUrl) {
+    console.error('filedrop: error: --mesh-signal or --signal-url is required when using --mesh');
     console.error("Run 'filedrop --help' for usage.");
     process.exit(1);
   }
@@ -270,6 +297,7 @@ function parseArgs(argv) {
     port,
     bind: args.bind,
     timeout,
+    transferTimeout,
     shutdownGraceMs,
     rateLimitWindow,
     rateLimitMax,
@@ -283,8 +311,9 @@ function parseArgs(argv) {
     verbose: args.verbose,
     color: args.color,
     mesh: args.mesh,
-    signalUrl: args['signal-url'],
+    signalUrl,
     signalHost: args["signal-host"] || null,
+    downloadLimit,
     relay: args.relay,
     relayPassword: args['relay-password'] || null,
     iceTimeout,

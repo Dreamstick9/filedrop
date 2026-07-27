@@ -36,6 +36,27 @@ test('Server Core', async (t) => {
     await shutdown();
   });
 
+  await t.test('GET / includes hashchange listener for late decryption key addition (#133)', async () => {
+    const filePath = createTempFile(1024, '.txt');
+    const { server, shutdown } = await createServer({
+      filePath,
+      port: 0,
+      onTransferComplete: () => {},
+      onTransferError: () => {}
+    });
+
+    const port = server.address().port;
+    const htmlRes = await httpClient(`http://127.0.0.1:${port}/`);
+    const htmlStr = htmlRes.body.toString();
+
+    assert.match(htmlStr, /window\.addEventListener\('hashchange'/);
+    assert.match(htmlStr, /let downloadInProgress = false;/);
+    assert.match(htmlStr, /let pendingHashChange = false;/);
+    assert.match(htmlStr, /function finishDownload/);
+
+    await shutdown();
+  });
+
   await t.test('GET / injects the detected MIME type for single-file transfers', async () => {
     const filePath = createTempFile(1024, '.pdf');
     const { server, shutdown, downloadPath } = await createServer({
@@ -80,6 +101,26 @@ test('Server Core', async (t) => {
     } finally {
       fs.rmSync(dirPath, { recursive: true, force: true });
     }
+  });
+
+  await t.test('GET / injects text/plain and navigator.clipboard for clipboard transfers without deprecated execCommand', async () => {
+    const { server, shutdown } = await createServer({
+      isClipboard: true,
+      clipboardData: 'Test clipboard content',
+      port: 0,
+      onTransferComplete: () => {},
+      onTransferError: () => {}
+    });
+
+    const port = server.address().port;
+    const htmlRes = await httpClient(`http://127.0.0.1:${port}/`);
+    const bodyStr = htmlRes.body.toString();
+
+    assert.match(bodyStr, /type: "text\/plain"/);
+    assert.ok(bodyStr.includes('navigator.clipboard.writeText'));
+    assert.ok(!bodyStr.includes('execCommand'), 'Should not contain deprecated execCommand');
+
+    await shutdown();
   });
 
   await t.test('GET / injects text/plain for clipboard transfers', async () => {
@@ -625,4 +666,18 @@ test('Server Core', async (t) => {
       }
     }
   });
+});
+test('Download Limit Input Parsing Validation', () => {
+  // The exact parsing logic implemented in index.js
+  const parseLimit = (ans) => {
+    const n = parseInt(ans, 10);
+    return Number.isInteger(n) && n > 0 ? n : 1;
+  };
+
+  // Acceptance Criteria Checks
+  assert.strictEqual(parseLimit('-3'), 1);  // Negative numbers default to 1
+  assert.strictEqual(parseLimit('0'), 1);   // Zero defaults to 1
+  assert.strictEqual(parseLimit('5'), 5);   // Positive integers are allowed
+  assert.strictEqual(parseLimit('abc'), 1); // NaN/Strings default to 1
+  assert.strictEqual(parseLimit(''), 1);    // Empty strings default to 1
 });

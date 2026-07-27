@@ -168,6 +168,7 @@ async function createServer({
     .progress-bar { width: 100%; height: 12px; background: #222; border-radius: 6px; overflow: hidden; margin-bottom: 12px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.8); }
     .progress-fill { height: 100%; background: linear-gradient(90deg, #0A84FF, #5E5CE6); width: 0%; transition: width 0.1s linear; box-shadow: 0 0 10px rgba(10,132,255,0.5); }
     .status-row { display: flex; justify-content: space-between; font-size: 0.85rem; color: #888; }
+
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
 
     /* Custom cursor styles */
@@ -208,6 +209,48 @@ async function createServer({
       transform: translate(-50%, -50%) scale(0.8);
     }
   </style></head>
+
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+    /* Scroll-to-top button */
+    #scrollTopBtn {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: none;
+      background: #0A84FF;
+      color: #fff;
+      font-size: 20px;
+      line-height: 44px;
+      text-align: center;
+      padding: 0;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(10,132,255,0.4);
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(10px);
+      transition: opacity 0.25s ease, transform 0.25s ease, background 0.2s ease, visibility 0.25s;
+      z-index: 9999;
+    }
+    #scrollTopBtn.visible {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+    }
+    #scrollTopBtn:hover {
+      background: #5E5CE6;
+      transform: translateY(-2px);
+    }
+    #scrollTopBtn:focus-visible {
+      outline: 2px solid #fff;
+      outline-offset: 2px;
+    }
+  </style>
+</head>
+
 <body>
   <div class="cursor-dot" id="cursorDot"></div>
   <div class="cursor-ring" id="cursorRing"></div>
@@ -223,6 +266,7 @@ async function createServer({
         <span id="percentText">0%</span>
       </div>
     `}
+
   </div>
   <script>
     (function() {
@@ -272,7 +316,32 @@ async function createServer({
     })();
   </script>
   <script src="/forge.min.js"></script>
+
+</div>
+  <button id="scrollTopBtn" aria-label="Scroll to top" title="Scroll to top">&#8593;</button>
+
   <script>
+    (function() {
+      var scrollBtn = document.getElementById('scrollTopBtn');
+      var threshold = 300;
+
+      function toggleScrollBtn() {
+        if (window.scrollY > threshold) {
+          scrollBtn.classList.add('visible');
+        } else {
+          scrollBtn.classList.remove('visible');
+        }
+      }
+
+      window.addEventListener('scroll', toggleScrollBtn, { passive: true });
+      toggleScrollBtn();
+
+      scrollBtn.addEventListener('click', function() {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    })();
+  </script>
+  <script src="/forge.min.js"></script>  <script>
     // Chunking is necessary to avoid "Maximum call stack size exceeded" errors from String.fromCharCode.apply
     function u8ToBinaryString(u8) {
       let res = '';
@@ -283,7 +352,7 @@ async function createServer({
       return res;
     }
 
-    (async function() {
+    (function() {
       const statusEl = document.getElementById('statusText');
       const percentEl = document.getElementById('percentText');
       const progressEl = document.getElementById('progress');
@@ -296,173 +365,197 @@ async function createServer({
         if (textArea) textArea.value = txt;
       };
 
-      try {
+      let downloadInProgress = false;
+      let pendingHashChange = false;
+      let bufferedEncryptedData = null;
+      let currentAttemptId = 0;
+
+      function finishDownload(attemptId) {
+        if (attemptId && attemptId !== currentAttemptId) return;
+        downloadInProgress = false;
+        if (pendingHashChange && window.location.hash.slice(1)) {
+          pendingHashChange = false;
+          startDownload();
+        }
+      }
+
+      async function startDownload() {
+        if (downloadInProgress) {
+          pendingHashChange = true;
+          return;
+        }
+
         const hash = window.location.hash.slice(1);
         if (!hash) {
           setStatus("Error: Missing Key");
           setClipText("Error: Missing decryption key in URL.");
           return;
         }
-        
-        setStatus("Fetching...");
-        const response = await fetch('${downloadPath}' + window.location.search);
-        if (!response.ok) {
-          setStatus("Error: Link Expired");
-          setClipText("Error: Link expired or already copied.");
-          ${isClipboard ? 'window.close();' : ''}
-          return;
-        }
 
-        const contentLength = response.headers.get('Content-Length');
-        const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
-        let loadedBytes = 0;
-        const chunks = [];
-        if (!response.body) throw new Error("ReadableStream not supported by browser");
-        const reader = response.body.getReader();
+        downloadInProgress = true;
+        pendingHashChange = false;
+        const attemptId = ++currentAttemptId;
+        if (statusEl) statusEl.style.color = "";
 
-        setStatus("Downloading...");
-        while(true) {
-          const {done, value} = await reader.read();
-          if (done) break;
-          chunks.push(value);
-          loadedBytes += value.length;
-          if (totalBytes > 0) {
-            const percent = Math.min(100, Math.round((loadedBytes / totalBytes) * 100));
-            setProgressWidth(percent + "%");
-            setPercent(percent + "%");
+        try {
+          let encryptedBuffer;
+          if (bufferedEncryptedData) {
+            encryptedBuffer = bufferedEncryptedData;
           } else {
-            const mb = (loadedBytes / (1024 * 1024)).toFixed(1);
-            setPercent(mb + " MB");
-            setProgressWidth("100%");
-            if (progressEl) progressEl.style.animation = "pulse 1.5s ease-in-out infinite";
-          }
-        }
-
-        setStatus("Decrypting...");
-        const encryptedBuffer = new Uint8Array(loadedBytes);
-        let position = 0;
-        for (let chunk of chunks) {
-          encryptedBuffer.set(chunk, position);
-          position += chunk.length;
-        }
-        
-        const iv = new Uint8Array(encryptedBuffer.slice(0, 12));
-        const data = new Uint8Array(encryptedBuffer.slice(12));
-        
-        let decryptedBuffer;
-        if (window.crypto && window.crypto.subtle) {
-          const keyBytes = new Uint8Array(hash.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
-          const key = await crypto.subtle.importKey(
-            "raw", keyBytes, { name: "AES-GCM" }, false, ["decrypt"]
-          );
-          decryptedBuffer = await crypto.subtle.decrypt(
-            { name: "AES-GCM", iv: iv },
-            key,
-            data
-          );
-        } else {
-          console.log("Using node-forge fallback for decryption.");
-          if (!window.forge) throw new Error("Cryptography fallback not loaded.");
-          
-          const keyBytesStr = forge.util.hexToBytes(hash);
-          const ivStr = u8ToBinaryString(iv);
-          
-          const tagLen = 16;
-          if (data.length < tagLen) throw new Error("Ciphertext too short.");
-          
-          const cipherBytesStr = u8ToBinaryString(data.subarray(0, data.length - tagLen));
-          const tagStr = u8ToBinaryString(data.subarray(data.length - tagLen));
-          
-          const decipher = forge.cipher.createDecipher('AES-GCM', keyBytesStr);
-          decipher.start({
-            iv: ivStr,
-            tagLength: 128,
-            tag: forge.util.createBuffer(tagStr)
-          });
-          decipher.update(forge.util.createBuffer(cipherBytesStr));
-          const pass = decipher.finish();
-          if (!pass) throw new Error("Decryption failed (authentication tag mismatch).");
-          
-          const decryptedString = decipher.output.getBytes();
-          decryptedBuffer = new Uint8Array(decryptedString.length);
-          for (let i = 0; i < decryptedString.length; i++) {
-            decryptedBuffer[i] = decryptedString.charCodeAt(i);
-          }
-        }
-        
-        setStatus("Transfer Complete!");
-        setPercent("100%");
-        setProgressWidth("100%");
-
-        const blob = new Blob([decryptedBuffer], { type: ${JSON.stringify(contentType)} });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = decodeURIComponent("${encodeURIComponent(fileName)}");
-
-        if (${isClipboard}) {
-          const text = new TextDecoder().decode(decryptedBuffer);
-          setClipText(text);
-          
-          document.getElementById('copyBtn').addEventListener('click', () => {
-            const btn = document.getElementById('copyBtn');
-            const doCopy = () => {
-              btn.innerText = 'Copied!';
-              btn.style.background = '#30D158';
-              window.close();
-            };
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-              navigator.clipboard.writeText(text).then(doCopy).catch(err => {
-                console.error('navigator.clipboard failed, trying fallback:', err);
-                fallbackCopy();
-              });
-            } else {
-              fallbackCopy();
+            setStatus("Fetching...");
+            const response = await fetch('${downloadPath}' + window.location.search);
+            if (!response.ok) {
+              setStatus("Error: Link Expired");
+              setClipText("Error: Link expired or already copied.");
+              ${isClipboard ? 'window.close();' : ''}
+              finishDownload(attemptId);
+              return;
             }
-            function fallbackCopy() {
-              const dummyTextArea = document.createElement('textarea');
-              dummyTextArea.value = text;
-              dummyTextArea.style.position = 'fixed';
-              dummyTextArea.style.opacity = '0';
-              document.body.appendChild(dummyTextArea);
-              dummyTextArea.focus();
-              dummyTextArea.select();
-              try {
-                const successful = document.execCommand('copy');
-                if (successful) {
-                  doCopy();
-                } else {
+
+            const contentLength = response.headers.get('Content-Length');
+            const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
+            let loadedBytes = 0;
+            const chunks = [];
+            if (!response.body) throw new Error("ReadableStream not supported by browser");
+            const reader = response.body.getReader();
+
+            setStatus("Downloading...");
+            while(true) {
+              const {done, value} = await reader.read();
+              if (done) break;
+              chunks.push(value);
+              loadedBytes += value.length;
+              if (totalBytes > 0) {
+                const percent = Math.min(100, Math.round((loadedBytes / totalBytes) * 100));
+                setProgressWidth(percent + "%");
+                setPercent(percent + "%");
+              } else {
+                const mb = (loadedBytes / (1024 * 1024)).toFixed(1);
+                setPercent(mb + " MB");
+                setProgressWidth("100%");
+                if (progressEl) progressEl.style.animation = "pulse 1.5s ease-in-out infinite";
+              }
+            }
+
+            encryptedBuffer = new Uint8Array(loadedBytes);
+            let position = 0;
+            for (let chunk of chunks) {
+              encryptedBuffer.set(chunk, position);
+              position += chunk.length;
+            }
+            bufferedEncryptedData = encryptedBuffer;
+          }
+
+          setStatus("Decrypting...");
+          const iv = new Uint8Array(encryptedBuffer.slice(0, 12));
+          const data = new Uint8Array(encryptedBuffer.slice(12));
+          
+          let decryptedBuffer;
+          if (window.crypto && window.crypto.subtle) {
+            const keyBytes = new Uint8Array(hash.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+            const key = await crypto.subtle.importKey(
+              "raw", keyBytes, { name: "AES-GCM" }, false, ["decrypt"]
+            );
+            decryptedBuffer = await crypto.subtle.decrypt(
+              { name: "AES-GCM", iv: iv },
+              key,
+              data
+            );
+          } else {
+            console.log("Using node-forge fallback for decryption.");
+            if (!window.forge) throw new Error("Cryptography fallback not loaded.");
+            
+            const keyBytesStr = forge.util.hexToBytes(hash);
+            const ivStr = u8ToBinaryString(iv);
+            
+            const tagLen = 16;
+            if (data.length < tagLen) throw new Error("Ciphertext too short.");
+            
+            const cipherBytesStr = u8ToBinaryString(data.subarray(0, data.length - tagLen));
+            const tagStr = u8ToBinaryString(data.subarray(data.length - tagLen));
+            
+            const decipher = forge.cipher.createDecipher('AES-GCM', keyBytesStr);
+            decipher.start({
+              iv: ivStr,
+              tagLength: 128,
+              tag: forge.util.createBuffer(tagStr)
+            });
+            decipher.update(forge.util.createBuffer(cipherBytesStr));
+            const pass = decipher.finish();
+            if (!pass) throw new Error("Decryption failed (authentication tag mismatch).");
+            
+            const decryptedString = decipher.output.getBytes();
+            decryptedBuffer = new Uint8Array(decryptedString.length);
+            for (let i = 0; i < decryptedString.length; i++) {
+              decryptedBuffer[i] = decryptedString.charCodeAt(i);
+            }
+          }
+          
+          setStatus("Transfer Complete!");
+          setPercent("100%");
+          setProgressWidth("100%");
+
+          const blob = new Blob([decryptedBuffer], { type: ${JSON.stringify(contentType)} });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = decodeURIComponent("${encodeURIComponent(fileName)}");
+
+          if (${isClipboard}) {
+            const text = new TextDecoder().decode(decryptedBuffer);
+            setClipText(text);
+            
+            document.getElementById('copyBtn').addEventListener('click', () => {
+              const btn = document.getElementById('copyBtn');
+              const doCopy = () => {
+                btn.innerText = 'Copied!';
+                btn.style.background = '#30D158';
+                window.close();
+              };
+              if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(doCopy).catch(err => {
+                  console.error('navigator.clipboard failed:', err);
                   btn.innerText = 'Copy Failed';
                   btn.style.background = '#FF453A';
-                }
-              } catch (err) {
-                console.error('Fallback copy failed:', err);
-                btn.innerText = 'Copy Failed';
+                });
+              } else {
+                console.error('Clipboard API unsupported');
+                btn.innerText = 'Clipboard API Unsupported';
                 btn.style.background = '#FF453A';
               }
-              document.body.removeChild(dummyTextArea);
-            }
-          });
-        } else {
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
+            });
+          } else {
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          }
 
-          // Security measure: Erase the decryption key from the address bar
-          window.history.replaceState({}, document.title, window.location.pathname);
-          
-          setStatus("Done");
-          const h1 = document.querySelector('h1');
-          if (h1) h1.innerText = "Download Started - Safe to close";
+            // Security measure: Erase the decryption key from the address bar
+            window.history.replaceState({}, document.title, window.location.pathname);
+            
+            setStatus("Done");
+            const h1 = document.querySelector('h1');
+            if (h1) h1.innerText = "Download Started - Safe to close";
+          } catch (err) {
+            setStatus("Decryption Failed");
+            setClipText("Error: Decryption failed or link expired.");
+            if (statusEl) statusEl.style.color = "#FF453A";
+            console.error(err);
+            ${isClipboard ? 'window.close();' : ''}
+          } finally {
+            finishDownload(attemptId);
+          }
         }
-      } catch (err) {
-        setStatus("Decryption Failed");
-        setClipText("Error: Decryption failed or link expired.");
-        if (statusEl) statusEl.style.color = "#FF453A";
-        console.error(err);
-        ${isClipboard ? 'window.close();' : ''}
-      }
+
+      window.addEventListener('hashchange', () => {
+        if (downloadInProgress) {
+          pendingHashChange = true;
+        } else {
+          startDownload();
+        }
+      });
+      startDownload();
     })();
   </script>
 </body>
@@ -809,31 +902,38 @@ function bind(lifecycle) {
 
   lifecycle.on('server:start', async (params) => {
     try {
-      const result = await module.exports.createServer({
-        ...params,
-        onTransferStart: (currentCount, limit) => {
-          lifecycle.emit('server:transfer-start', { currentCount, limit });
-          if (typeof params.onTransferStart === 'function') {
-            params.onTransferStart(currentCount, limit);
-          }
-        },
-        onTransferComplete: (completedCount, downloadLimit) => {
-          lifecycle.emit('server:transfer-complete', { completedCount, downloadLimit });
-          if (typeof params.onTransferComplete === 'function') {
-            params.onTransferComplete(completedCount, downloadLimit);
-          }
-        },
-        onTransferError: (err) => {
-          lifecycle.emit('server:transfer-error', err);
-          if (typeof params.onTransferError === 'function') {
-            params.onTransferError(err);
-          }
+      const { LanTransport } = require('./transport');
+      const transport = new LanTransport();
+
+      transport.on('transfer-start', ({ currentCount, limit }) => {
+        lifecycle.emit('server:transfer-start', { currentCount, limit });
+        if (typeof params.onTransferStart === 'function') {
+          params.onTransferStart(currentCount, limit);
         }
       });
 
+      transport.on('transfer-complete', ({ completedCount, downloadLimit }) => {
+        lifecycle.emit('server:transfer-complete', { completedCount, downloadLimit });
+        if (typeof params.onTransferComplete === 'function') {
+          params.onTransferComplete(completedCount, downloadLimit);
+        }
+      });
+
+      transport.on('transfer-error', (err) => {
+        lifecycle.emit('server:transfer-error', err);
+        if (typeof params.onTransferError === 'function') {
+          params.onTransferError(err);
+        }
+      });
+
+      const result = await transport.start(params);
       activeShutdown = result.shutdown;
 
-      lifecycle.emit('server:started', { keyHex: result.keyHex, downloadPath: result.downloadPath });
+      lifecycle.emit('server:started', {
+        keyHex: result.keyHex,
+        downloadPath: result.downloadPath,
+        shareUrl: result.shareUrl
+      });
     } catch (err) {
       lifecycle.emit('server:error', err);
     }

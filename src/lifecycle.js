@@ -27,7 +27,11 @@ class LifecycleManager extends EventEmitter {
     super();
     this.state = STATES.INITIALIZING;
     this.connectionTimeoutSeconds = typeof config.timeout === 'number' ? config.timeout : 300;
-    this.transferTimeoutSeconds = 60; // Hardcoded 60s limit for transfer after connection
+    const rawTransferTimeout = config.transferTimeout ?? config.transferTimeoutSeconds;
+    const parsedTransferTimeout = Number(rawTransferTimeout);
+    this.transferTimeoutSeconds = Number.isFinite(parsedTransferTimeout) && parsedTransferTimeout > 0
+      ? parsedTransferTimeout
+      : 60;
     this.stdoutFlushTimeout = config.stdoutFlushTimeout ?? 500;
     const failsafeInput = Number(config.failsafeExitTimeout);
     this.failsafeExitTimeout = Number.isFinite(failsafeInput) && failsafeInput > 0
@@ -150,7 +154,7 @@ class LifecycleManager extends EventEmitter {
       }
       this.transition(STATES.FAILED, { 
         exitCode: 5, 
-        error: new Error('Transfer timeout exceeded (60s). Client too slow or hung.') 
+        error: new Error(`Transfer timeout exceeded (${this.transferTimeoutSeconds}s). Client too slow or hung.`) 
       }); 
     }, this.transferTimeoutSeconds * 1000);
   }
