@@ -264,7 +264,10 @@ class LifecycleManager extends EventEmitter {
           setTimeout(done, this.stdoutFlushTimeout);
         });
       } catch (e) {
-        console.error('Failed to flush stdout:', e);
+        process.stderr.write(`[filedrop] Failed to flush stdout: ${e.message}\n`);
+        if (process.env.FILEDROP_DEBUG) {
+          process.stderr.write(`${e.stack}\n`);
+        }
       }
     }
 

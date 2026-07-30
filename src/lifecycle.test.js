@@ -82,6 +82,31 @@ test('Lifecycle Manager', async (t) => {
     assert.strictEqual(lm.state, 'EXITED');
   });
 
+  await t.test('Stdout flush failure writes to stderr not console.error', async (t) => {
+    const originalEnd = process.stdout.end;
+    process.stdout.end = () => { throw new Error('stdout broken'); };
+    const originalIsTTY = process.stdout.isTTY;
+    process.stdout.isTTY = false;
+    t.after(() => {
+      process.stdout.end = originalEnd;
+      process.stdout.isTTY = originalIsTTY;
+    });
+
+    const stderrChunks = [];
+    const originalStderrWrite = process.stderr.write;
+    process.stderr.write = (chunk) => { stderrChunks.push(chunk); };
+    t.after(() => {
+      process.stderr.write = originalStderrWrite;
+    });
+
+    const lm = new LifecycleManager({ stdoutFlushTimeout: 20 });
+    await lm.exitCleanly(0);
+
+    const output = stderrChunks.join('');
+    assert.ok(output.includes('Failed to flush stdout'));
+    assert.ok(output.includes('stdout broken'));
+  });
+
   await t.test('Transfer timeout uses default 60s when not configured', async () => {
     const lm = new LifecycleManager();
     assert.strictEqual(lm.transferTimeoutSeconds, 60);
