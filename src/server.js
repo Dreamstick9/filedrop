@@ -777,15 +777,13 @@ async function createServer({
           const result = options.onShutdown();
           if (result && typeof result.catch === 'function') {
             result.catch((err) => {
-              const msg = err && err.message ? err.message : String(err);
-              process.stderr.write(`[filedrop] onShutdown error: ${msg}\n`);
-              if (process.env.FILEDROP_DEBUG && err && err.stack) process.stderr.write(`${err.stack}\n`);
+              process.stderr.write(`[filedrop] onShutdown error: ${err?.message ?? err}\n`);
+              if (process.env.FILEDROP_DEBUG && err?.stack) process.stderr.write(`${err.stack}\n`);
             });
           }
         } catch (err) {
-          const msg = err && err.message ? err.message : String(err);
-          process.stderr.write(`[filedrop] onShutdown error: ${msg}\n`);
-          if (process.env.FILEDROP_DEBUG && err && err.stack) process.stderr.write(`${err.stack}\n`);
+          process.stderr.write(`[filedrop] onShutdown error: ${err?.message ?? err}\n`);
+          if (process.env.FILEDROP_DEBUG && err?.stack) process.stderr.write(`${err.stack}\n`);
         }
       }
 
