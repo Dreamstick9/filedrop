@@ -775,8 +775,8 @@ async function createServer({
       if (typeof options.onShutdown === 'function') {
         try { 
           options.onShutdown(); 
-        } catch {
-          // Ignore cleanup errors.
+        } catch (err) {
+          console.error('filedrop: shutdown error:', err);
         }
       }
 
