@@ -576,6 +576,56 @@ test('Server Core', async (t) => {
     await new Promise(resolve => originalClose(resolve));
   });
 
+  await t.test('onShutdown synchronous error is logged to stderr', async (t) => {
+    const filePath = createTempFile(1024, '.txt');
+
+    const stderrChunks = [];
+    const originalStderrWrite = process.stderr.write;
+    process.stderr.write = (chunk) => { stderrChunks.push(chunk); };
+    t.after(() => { process.stderr.write = originalStderrWrite; });
+
+    const { server, shutdown } = await createServer({
+      filePath,
+      port: 0,
+      options: {
+        onShutdown: () => { throw new Error('shutdown failed'); }
+      },
+      onTransferComplete: () => {},
+      onTransferError: () => {}
+    });
+
+    await shutdown();
+
+    const output = stderrChunks.join('');
+    assert.ok(output.includes('onShutdown error'));
+    assert.ok(output.includes('shutdown failed'));
+  });
+
+  await t.test('onShutdown async rejection is logged to stderr', async (t) => {
+    const filePath = createTempFile(1024, '.txt');
+
+    const stderrChunks = [];
+    const originalStderrWrite = process.stderr.write;
+    process.stderr.write = (chunk) => { stderrChunks.push(chunk); };
+    t.after(() => { process.stderr.write = originalStderrWrite; });
+
+    const { server, shutdown } = await createServer({
+      filePath,
+      port: 0,
+      options: {
+        onShutdown: async () => { throw new Error('async shutdown failed'); }
+      },
+      onTransferComplete: () => {},
+      onTransferError: () => {}
+    });
+
+    await shutdown();
+
+    const output = stderrChunks.join('');
+    assert.ok(output.includes('onShutdown error'));
+    assert.ok(output.includes('async shutdown failed'));
+  });
+
   await t.test('Decoded filename route matching: correctly resolves paths with spaces/special characters', async () => {
     const tempDir = os.tmpdir();
     const filePath = path.join(tempDir, 'file name with space.txt');

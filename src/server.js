@@ -773,10 +773,17 @@ async function createServer({
       const forceTimeout = setTimeout(finish, shutdownTimeoutMs);
 
       if (typeof options.onShutdown === 'function') {
-        try { 
-          options.onShutdown(); 
-        } catch {
-          // Ignore cleanup errors.
+        try {
+          const result = options.onShutdown();
+          if (result && typeof result.catch === 'function') {
+            result.catch((err) => {
+              process.stderr.write(`[filedrop] onShutdown error: ${err.message}\n`);
+              if (process.env.FILEDROP_DEBUG) process.stderr.write(`${err.stack}\n`);
+            });
+          }
+        } catch (err) {
+          process.stderr.write(`[filedrop] onShutdown error: ${err.message}\n`);
+          if (process.env.FILEDROP_DEBUG) process.stderr.write(`${err.stack}\n`);
         }
       }
 
