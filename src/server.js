@@ -121,8 +121,13 @@ async function createServer({
   const rateLimitWindow = options.rateLimitWindow ?? DEFAULT_RATE_LIMIT_WINDOW_MS;
   const rateLimitMax = options.rateLimitMax ?? DEFAULT_RATE_LIMIT_MAX;
   const rateLimitRetryAfter = Math.ceil(rateLimitWindow / 1000);
-  const ipRequestCounts = new Map(); // Maps IP -> Array of timestamps
+  // Synchronous-only access: ipRequestCounts is read and written by checkRateLimit
+  // and the cleanup interval. Both are fully synchronous (no await), so the
+  // single-threaded event loop guarantees atomicity. Do NOT add async operations
+  // inside checkRateLimit or the cleanup callback.
+  const ipRequestCounts = new Map();
 
+  // Must remain synchronous — no await.
   function checkRateLimit(ip) {
     const now = Date.now();
     let timestamps = ipRequestCounts.get(ip) || [];
@@ -141,6 +146,7 @@ async function createServer({
     return true; // allowed
   }
 
+  // Must remain synchronous — no await.
   const rateLimitCleanup = setInterval(() => {
     const now = Date.now();
     for (const [ip, timestamps] of ipRequestCounts) {
