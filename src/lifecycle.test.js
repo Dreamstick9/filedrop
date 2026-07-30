@@ -99,12 +99,46 @@ test('Lifecycle Manager', async (t) => {
       process.stderr.write = originalStderrWrite;
     });
 
+    const consoleErrorCalls = [];
+    const originalConsoleError = console.error;
+    console.error = (...args) => { consoleErrorCalls.push(args); };
+    t.after(() => { console.error = originalConsoleError; });
+
     const lm = new LifecycleManager({ stdoutFlushTimeout: 20 });
     await lm.exitCleanly(0);
 
     const output = stderrChunks.join('');
     assert.ok(output.includes('Failed to flush stdout'));
     assert.ok(output.includes('stdout broken'));
+    assert.strictEqual(consoleErrorCalls.length, 0, 'must not call console.error');
+  });
+
+  await t.test('Stdout flush error includes stack trace under FILEDROP_DEBUG', async (t) => {
+    const originalEnd = process.stdout.end;
+    process.stdout.end = () => { throw new Error('stdout broken'); };
+    const originalIsTTY = process.stdout.isTTY;
+    process.stdout.isTTY = false;
+    t.after(() => {
+      process.stdout.end = originalEnd;
+      process.stdout.isTTY = originalIsTTY;
+    });
+
+    const stderrChunks = [];
+    const originalStderrWrite = process.stderr.write;
+    process.stderr.write = (chunk) => { stderrChunks.push(chunk); };
+    t.after(() => {
+      process.stderr.write = originalStderrWrite;
+    });
+
+    const origDebug = process.env.FILEDROP_DEBUG;
+    process.env.FILEDROP_DEBUG = '1';
+    t.after(() => { process.env.FILEDROP_DEBUG = origDebug; });
+
+    const lm = new LifecycleManager({ stdoutFlushTimeout: 20 });
+    await lm.exitCleanly(0);
+
+    const output = stderrChunks.join('');
+    assert.ok(output.includes('Error: stdout broken'));
   });
 
   await t.test('Transfer timeout uses default 60s when not configured', async () => {
