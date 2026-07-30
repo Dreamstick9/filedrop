@@ -154,5 +154,23 @@ test('Lifecycle Manager', async (t) => {
     assert.strictEqual(lm.failsafeExitTimeout, 2000);
   });
 
+  await t.test('mdns.deregister errors during shutdown emit shutdown-error event', async (t) => {
+    const mdnsMock = {
+      deregister: async () => { throw new Error('mDNS teardown failed'); }
+    };
+    const lm = new LifecycleManager({ mdns: mdnsMock });
+
+    const errors = [];
+    lm.on('shutdown-error', (data) => {
+      errors.push(data);
+    });
+
+    await lm.exitCleanly(0);
+
+    assert.strictEqual(errors.length, 1);
+    assert.strictEqual(errors[0].phase, 'mdns.deregister');
+    assert.strictEqual(errors[0].error.message, 'mDNS teardown failed');
+  });
+
 });
 
