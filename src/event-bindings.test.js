@@ -93,11 +93,40 @@ test('Event Bindings', async (t) => {
     const cleanups = [];
 
     const originalBind = server.bind;
-    server.bind = (lifecycle) => {
-      lifecycle.on('shutdown', (cleanups) => {
-        cleanups.push(Promise.reject(new Error('server shutdown failed')));
-      });
-    };
+  await t.test('server shutdown errors via lifecycle event are not silently swallowed', async () => {
+    const lifecycle = new EventEmitter();
+    const cleanups = [];
+
+    const originalCreateServer = server.createServer;
+    server.createServer = async () => ({
+      server: { address: () => ({ port: 9999 }) },
+      shutdown: async () => { throw new Error('server shutdown failed'); },
+      keyHex: 'abc',
+      downloadPath: '/download/abc'
+    });
+
+    server.bind(lifecycle);
+
+    await new Promise((resolve) => {
+      lifecycle.once('server:started', resolve);
+      lifecycle.emit('server:start', { filePath: 'foo.txt', port: 9999 });
+    });
+
+    lifecycle.emit('shutdown', cleanups);
+    assert.strictEqual(cleanups.length, 1);
+
+    let caughtError;
+    try {
+      await cleanups[0];
+    } catch (err) {
+      caughtError = err;
+    }
+
+    assert.ok(caughtError, 'server shutdown error should propagate for lifecycle to handle');
+    assert.strictEqual(caughtError.message, 'server shutdown failed');
+
+    server.createServer = originalCreateServer;
+  });
 
     server.bind(lifecycle);
 
