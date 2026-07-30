@@ -88,6 +88,54 @@ test('Event Bindings', async (t) => {
     mdns.announce = originalAnnounce;
   });
 
+  await t.test('mdns.bind pushes deregister into shutdown cleanups', async () => {
+    const lifecycle = new EventEmitter();
+    const cleanups = [];
+
+    const originalDeregister = mdns.deregister;
+    let deregisterCalled = false;
+    mdns.deregister = async () => {
+      deregisterCalled = true;
+    };
+
+    mdns.bind(lifecycle);
+
+    lifecycle.emit('shutdown', cleanups);
+
+    assert.strictEqual(cleanups.length, 1);
+    await cleanups[0];
+    assert.strictEqual(deregisterCalled, true);
+
+    mdns.deregister = originalDeregister;
+  });
+
+  await t.test('mdns shutdown deregister errors are not silently swallowed', async () => {
+    const lifecycle = new EventEmitter();
+    const cleanups = [];
+
+    const originalDeregister = mdns.deregister;
+    mdns.deregister = async () => {
+      throw new Error('mDNS teardown failed');
+    };
+
+    mdns.bind(lifecycle);
+
+    lifecycle.emit('shutdown', cleanups);
+    assert.strictEqual(cleanups.length, 1);
+
+    let caughtError;
+    try {
+      await cleanups[0];
+    } catch (err) {
+      caughtError = err;
+    }
+
+    assert.ok(caughtError, 'deregister error should propagate for lifecycle to handle');
+    assert.strictEqual(caughtError.message, 'mDNS teardown failed');
+
+    mdns.deregister = originalDeregister;
+  });
+
   // Test server binding and transfer mappings
   await t.test('server.bind mapping of transfer events', async () => {
     const lifecycle = new EventEmitter();
