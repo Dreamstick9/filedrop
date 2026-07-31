@@ -71,7 +71,7 @@ async function createServer({
   } else {
     fileName = path.basename(filePath);
   }
-  const transferId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
+  const transferId = crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex');
   const downloadToken = crypto.randomBytes(16).toString('hex');
   const downloadPath = `/download/${downloadToken}`;
 

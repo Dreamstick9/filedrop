@@ -9,7 +9,7 @@ const http = require('http');
  */
 function httpClient(url, options = {}) {
   return new Promise((resolve, reject) => {
-    const req = http.request(url, { ...options }, (res) => {
+    const req = http.request(url, { agent: false, ...options }, (res) => {
       const chunks = [];
       res.on('data', chunk => chunks.push(chunk));
       res.on('end', () => {

@@ -47,7 +47,7 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
+    "@eslint/js": "^8.57.1",
     "eslint": "^8.57.1",
     "globals": "^17.6.0",
     "pkg": "^5.8.1"
