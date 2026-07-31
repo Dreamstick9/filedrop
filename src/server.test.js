@@ -15,6 +15,16 @@ const { httpClient } = require('../test/helpers/http-client.js');
 test('Server Core', async (t) => {
   t.afterEach(cleanupTempFiles);
 
+  t.afterEach(() => {
+    if (process.env.FILEDROP_DUMP_HANDLES) {
+      const handles = process._getActiveHandles();
+      console.error('afterEach handle count:', handles.length);
+      handles.forEach((handle, index) => {
+        console.error(index + 1, handle.constructor.name, handle?.bytesRead ?? '');
+      });
+    }
+  });
+
   await t.test('GET / returns HTML payload', async () => {
     const filePath = createTempFile(1024, '.txt');
     const { server, shutdown } = await createServer({
@@ -666,6 +676,38 @@ test('Server Core', async (t) => {
       }
     }
   });
+
+  
+  await t.test('uses crypto.randomBytes fallback when crypto.randomUUID is unavailable', async () => {
+    const originalRandomUUID = crypto.randomUUID;
+    let shutdownFn = null;
+
+    try {
+      delete crypto.randomUUID;
+
+      const filePath = createTempFile(1024, '.txt');
+      const { server, shutdown, downloadPath } = await createServer({
+        filePath,
+        port: 0,
+        onTransferComplete: () => {},
+        onTransferError: () => {}
+      });
+      shutdownFn = shutdown;
+
+      const port = server.address().port;
+      // Added { agent: false } here so the client socket closes immediately
+      const res = await httpClient(`http://127.0.0.1:${port}${downloadPath}`, { method: 'HEAD', agent: false });
+
+      assert.strictEqual(res.statusCode, 200);
+      assert.ok(res.headers['x-transfer-id'], 'X-Transfer-ID header should be present');
+      assert.match(res.headers['x-transfer-id'], /^[a-f0-9]{32}$/, 'X-Transfer-ID should be a 32-character hex string');
+    } finally {
+      if (shutdownFn) {
+        await shutdownFn();
+      }
+      crypto.randomUUID = originalRandomUUID;
+    }
+  });
 });
 test('Download Limit Input Parsing Validation', () => {
   // The exact parsing logic implemented in index.js
@@ -681,3 +723,6 @@ test('Download Limit Input Parsing Validation', () => {
   assert.strictEqual(parseLimit('abc'), 1); // NaN/Strings default to 1
   assert.strictEqual(parseLimit(''), 1);    // Empty strings default to 1
 });
+
+
+
