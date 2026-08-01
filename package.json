@@ -16,7 +16,9 @@
   },
   "scripts": {
     "start": "node ./bin/filedrop.js",
-    "test": "node --test src/*.test.js",
+    "test": "node --test src/*.test.js test/integration/*.test.js",
+    "test:unit": "node --test src/*.test.js",
+    "test:integration": "node --test test/integration/*.test.js",
     "build": "node scripts/build.js",
     "lint": "eslint src/"
   },

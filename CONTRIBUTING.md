@@ -247,10 +247,16 @@ Before opening a Pull Request:
 - Ensure existing functionality is not broken.
 - Run available tests.
 
+`npm test` runs both the unit suite (`src/*.test.js`) and the integration
+suite (`test/integration/*.test.js`). The integration tests spawn the real CLI
+and exercise the full transfer path.
+
 Example:
 
 ```bash
-npm test
+npm test              # unit + integration
+npm run test:unit     # unit tests only
+npm run test:integration  # integration tests only
 ```
 
 If there are no automated tests for your changes, describe how you manually verified them in your Pull Request.
