@@ -802,7 +802,7 @@ async function createServer({
     server.listen(port, bindIp || '0.0.0.0', () => {
       server.removeListener('error', reject);
       // Expose keyHex here
-      resolve({ server, shutdown, keyHex, downloadPath });
+      resolve({ server, shutdown, keyHex, downloadPath, transferId });
     });
   });
 }
@@ -840,6 +840,7 @@ function bind(lifecycle) {
       activeShutdown = result.shutdown;
 
       lifecycle.emit('server:started', {
+        transferId: result.transferId,
         keyHex: result.keyHex,
         downloadPath: result.downloadPath,
         shareUrl: result.shareUrl

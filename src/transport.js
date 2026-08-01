@@ -105,6 +105,7 @@ class LanTransport {
       shareUrl,
       keyHex,
       downloadPath: serverHandle.downloadPath,
+      transferId: serverHandle.transferId,
       shutdown: serverHandle.shutdown
     };
   }

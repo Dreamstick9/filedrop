@@ -9,6 +9,7 @@ const fs = require('node:fs');
 const { LanTransport, pickTransport } = require('./transport.js');
 const { SignalingRoom } = require('./signaling.js');
 const { createTempFile, cleanupTempFiles } = require('../test/helpers/create-temp-file.js');
+const { httpClient } = require('../test/helpers/http-client.js');
 
 test.afterEach(() => {
   cleanupTempFiles();
@@ -36,6 +37,7 @@ test('LanTransport Contract & Implementation', async (t) => {
 
     assert.strictEqual(handle.transportId, 'lan');
     assert.ok(typeof handle.keyHex === 'string' && handle.keyHex.length > 0);
+    assert.ok(typeof handle.transferId === 'string' && handle.transferId.length > 0);
     assert.ok(handle.shareUrl.includes('127.0.0.1'));
     assert.ok(!handle.shareUrl.includes(':0/'), 'shareUrl must not contain port 0 when bound to ephemeral port');
     const portMatch = handle.shareUrl.match(/:(\d+)\//);
@@ -60,6 +62,27 @@ test('LanTransport Contract & Implementation', async (t) => {
     await assert.doesNotReject(async () => {
       await handle.shutdown();
     });
+  });
+
+  await t.test('X-Transfer-ID header matches handle.transferId (#169)', async () => {
+    const filePath = createTempFile(1024, '.txt');
+    const transport = new LanTransport();
+
+    const handle = await transport.start({
+      filePath,
+      port: 0,
+      ip: '127.0.0.1'
+    });
+
+    try {
+      const portMatch = handle.shareUrl.match(/:(\d+)\//);
+      assert.ok(portMatch, 'shareUrl should expose the bound port');
+      const res = await httpClient(`http://127.0.0.1:${portMatch[1]}${handle.downloadPath}`, { method: 'HEAD', agent: false });
+      assert.strictEqual(res.statusCode, 200);
+      assert.strictEqual(res.headers['x-transfer-id'], handle.transferId);
+    } finally {
+      await handle.shutdown();
+    }
   });
 });
 
