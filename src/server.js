@@ -30,6 +30,14 @@ const { validateToken, createConnectionLimiter } = require('./security');
 // "Maximum call stack size exceeded" error if the array is too large.
 const U8_TO_BINARY_CHUNK_SIZE = 10000;
 
+// The decryption key is a 32-byte AES-256 key serialized as 64 hex chars.
+const AES_KEY_HEX_LENGTH = 64;
+const AES_KEY_FRAGMENT_REGEX = /^[0-9a-fA-F]{64}$/;
+
+function isValidAesKeyFragment(fragment) {
+  return typeof fragment === 'string' && AES_KEY_FRAGMENT_REGEX.test(fragment);
+}
+
 function escapeHtml(unsafe) {
   return unsafe
     .replace(/&/g, "&amp;")
@@ -299,6 +307,11 @@ async function createServer({
         if (!hash) {
           setStatus("Error: Missing Key");
           setClipText("Error: Missing decryption key in URL.");
+          return;
+        }
+        if (!${AES_KEY_FRAGMENT_REGEX}.test(hash)) {
+          setStatus("Error: Invalid Key");
+          setClipText("Error: Decryption key must be 64 hex characters.");
           return;
         }
 
@@ -870,4 +883,4 @@ function bind(lifecycle) {
   });
 }
 
-module.exports = { createServer, bind };
+module.exports = { createServer, bind, isValidAesKeyFragment, AES_KEY_FRAGMENT_REGEX };

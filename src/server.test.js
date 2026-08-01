@@ -7,7 +7,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const http = require('http');
-const { createServer } = require('./server.js');
+const { createServer, isValidAesKeyFragment } = require('./server.js');
 const pkg = require('../package.json');
 const { createTempFile, cleanupTempFiles } = require('../test/helpers/create-temp-file.js');
 const { httpClient } = require('../test/helpers/http-client.js');
@@ -722,6 +722,21 @@ test('Download Limit Input Parsing Validation', () => {
   assert.strictEqual(parseLimit('5'), 5);   // Positive integers are allowed
   assert.strictEqual(parseLimit('abc'), 1); // NaN/Strings default to 1
   assert.strictEqual(parseLimit(''), 1);    // Empty strings default to 1
+});
+
+test('AES key fragment validation (#166)', () => {
+  const valid = 'a'.repeat(64);
+  assert.strictEqual(isValidAesKeyFragment(valid), true);
+  assert.strictEqual(isValidAesKeyFragment(valid.toUpperCase()), true);
+
+  assert.strictEqual(isValidAesKeyFragment(''), false);
+  assert.strictEqual(isValidAesKeyFragment('a'.repeat(63)), false);
+  assert.strictEqual(isValidAesKeyFragment('a'.repeat(65)), false);
+  assert.strictEqual(isValidAesKeyFragment('a'.repeat(63) + 'g'), false); // non-hex char
+  assert.strictEqual(isValidAesKeyFragment('a'.repeat(63) + 'z'), false);
+  assert.strictEqual(isValidAesKeyFragment(null), false);
+  assert.strictEqual(isValidAesKeyFragment(undefined), false);
+  assert.strictEqual(isValidAesKeyFragment(valid + '\n'), false);
 });
 
 
