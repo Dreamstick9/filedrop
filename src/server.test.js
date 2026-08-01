@@ -497,6 +497,7 @@ test('Server Core', async (t) => {
 
         assert.strictEqual(response.statusCode, 200);
         assert.strictEqual(response.headers['content-type'], 'application/javascript');
+        assert.strictEqual(response.headers['cache-control'], 'max-age=31536000');
         assert.deepStrictEqual(response.body, expected);
       } finally {
         await shutdown();
