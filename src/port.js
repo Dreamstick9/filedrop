@@ -48,8 +48,10 @@ function isPortAvailable(port) {
 
 /**
  * Finds an available port in the specified range.
- * Checks sequentially to avoid TOCTOU race conditions.
- * Maximum candidates to try is 20.
+ * Probes candidates concurrently (up to maxAttempts) to cut down port
+ * discovery latency on busy machines, then returns the lowest available one.
+ * Binding a single chosen port afterwards is still a single bind; the
+ * probe-vs-bind TOCTOU window is unchanged from the sequential version.
  *
  * @param {number} startPort
  * @param {number} endPort
@@ -57,23 +59,27 @@ function isPortAvailable(port) {
  */
 async function findAvailablePort(startPort = 8000, endPort = 8999) {
   const maxAttempts = 20;
-  let attempts = 0;
+  const lastPort = Math.min(endPort, startPort + maxAttempts - 1);
 
-  for (let port = startPort; port <= endPort; port++) {
-    if (attempts >= maxAttempts) {
-      break;
-    }
-    
-    const available = await isPortAvailable(port);
-    if (available) {
-      printFirewallWarningIfNeeded();
-      return port;
-    }
-    
-    attempts++;
+  const candidates = [];
+  for (let port = startPort; port <= lastPort; port++) {
+    candidates.push(port);
   }
 
-  throw new Error(`ERR_PORT_EXHAUSTED: No available ports in range: ${startPort}-${Math.min(endPort, startPort + maxAttempts - 1)}`);
+  const results = await Promise.all(
+    candidates.map(async (port) => ({
+      port,
+      available: await isPortAvailable(port)
+    }))
+  );
+
+  const available = results.find((r) => r.available);
+  if (available) {
+    printFirewallWarningIfNeeded();
+    return available.port;
+  }
+
+  throw new Error(`ERR_PORT_EXHAUSTED: No available ports in range: ${startPort}-${lastPort}`);
 }
 
 /**

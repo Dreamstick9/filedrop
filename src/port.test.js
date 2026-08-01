@@ -64,3 +64,50 @@ test('Port Manager', async (t) => {
     _resetFirewallWarning();
   });
 });
+
+test('Concurrent port probing', async (t) => {
+  t.afterEach(() => {
+    _resetFirewallWarning();
+  });
+
+  async function bindToPort(port) {
+    const srv = net.createServer();
+    await new Promise((resolve, reject) => {
+      srv.once('error', reject);
+      srv.listen(port, '0.0.0.0', resolve);
+    });
+    return srv;
+  }
+
+  await t.test('Returns the lowest available port past a run of busy ports', async () => {
+    const base = 30000 + Math.floor(Math.random() * 20000);
+    const servers = [];
+    try {
+      // Occupy four consecutive ports; the fifth must be chosen.
+      for (let i = 0; i < 4; i++) {
+        servers.push(await bindToPort(base + i));
+      }
+      const port = await findAvailablePort(base, base + 9);
+      assert.strictEqual(port, base + 4);
+    } finally {
+      await Promise.all(servers.map((s) => new Promise((resolve) => s.close(resolve))));
+    }
+  });
+
+  await t.test('Throws ERR_PORT_EXHAUSTED when every candidate is busy', async () => {
+    const base = 50000 + Math.floor(Math.random() * 10000);
+    const servers = [];
+    try {
+      for (let i = 0; i < 20; i++) {
+        try {
+          servers.push(await bindToPort(base + i));
+        } catch {
+          // Port already taken by something else; skip it.
+        }
+      }
+      await assert.rejects(() => findAvailablePort(base, base + 19), /ERR_PORT_EXHAUSTED/);
+    } finally {
+      await Promise.all(servers.map((s) => new Promise((resolve) => s.close(resolve))));
+    }
+  });
+});
