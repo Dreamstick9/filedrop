@@ -46,6 +46,25 @@ test('Server Core', async (t) => {
     await shutdown();
   });
 
+  await t.test('GET / sends a Content-Security-Policy header (#36)', async () => {
+    const filePath = createTempFile(1024, '.txt');
+    const { server, shutdown } = await createServer({
+      filePath,
+      port: 0,
+      onTransferComplete: () => {},
+      onTransferError: () => {}
+    });
+
+    const port = server.address().port;
+    const res = await httpClient(`http://127.0.0.1:${port}/`);
+
+    assert.strictEqual(res.statusCode, 200);
+    assert.match(res.headers['content-security-policy'], /default-src 'self'/);
+    assert.match(res.headers['content-security-policy'], /frame-ancestors 'none'/);
+
+    await shutdown();
+  });
+
   await t.test('GET / includes hashchange listener for late decryption key addition (#133)', async () => {
     const filePath = createTempFile(1024, '.txt');
     const { server, shutdown } = await createServer({

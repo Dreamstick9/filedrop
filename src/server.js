@@ -30,6 +30,11 @@ const { validateToken, createConnectionLimiter } = require('./security');
 // "Maximum call stack size exceeded" error if the array is too large.
 const U8_TO_BINARY_CHUNK_SIZE = 10000;
 
+// CSP for the decryptor page. The inline IIFE and <style> block require
+// 'unsafe-inline'; everything else stays same-origin. frame-ancestors blocks
+// clickjacking, and connect-src 'self' limits fetches to this server.
+const CSP_HEADER = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'";
+
 function escapeHtml(unsafe) {
   return unsafe
     .replace(/&/g, "&amp;")
@@ -533,6 +538,7 @@ async function createServer({
       }
       res.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
+        'Content-Security-Policy': CSP_HEADER,
         'Referrer-Policy': 'no-referrer'
       }); res.end(htmlPayload);
       return;
