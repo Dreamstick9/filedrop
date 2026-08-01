@@ -42,6 +42,29 @@ test('Network Interface Discovery', async (t) => {
         assert.strictEqual(result.info.address, '192.168.1.10');
     });
 
+    await t.test('Machine with Wi-Fi + Docker user-defined network', (t) => {
+        os.networkInterfaces = () => ({
+            lo0: [{ address: '127.0.0.1', family: 'IPv4', internal: true }],
+            en0: [{ address: '192.168.1.10', family: 'IPv4', internal: false }],
+            'br-abc123': [{ address: '172.19.0.2', family: 'IPv4', internal: false }]
+        });
+
+        const result = getInterface();
+        assert.strictEqual(result.name, 'en0');
+        assert.strictEqual(result.info.address, '192.168.1.10');
+    });
+
+    await t.test('Address outside the Docker 172.16/12 range stays usable', (t) => {
+        os.networkInterfaces = () => ({
+            lo0: [{ address: '127.0.0.1', family: 'IPv4', internal: true }],
+            en1: [{ address: '172.32.99.4', family: 'IPv4', internal: false }]
+        });
+
+        const result = getInterface();
+        assert.strictEqual(result.name, 'en1');
+        assert.strictEqual(result.info.address, '172.32.99.4');
+    });
+
     await t.test('Machine with VPN + Ethernet', (t) => {
         os.networkInterfaces = () => ({
             eth0: [{ address: '10.0.0.5', family: 'IPv4', internal: false }],
