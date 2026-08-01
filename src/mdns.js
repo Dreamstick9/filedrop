@@ -15,6 +15,10 @@ const path = require('path');
 const mDNS = require('multicast-dns');
 const EventEmitter = require('events');
 
+// How long to wait for mDNS registration on Windows before declaring it
+// unavailable. Can be overridden per call via config.winRegistrationTimeoutMs.
+const DEFAULT_WIN_REGISTRATION_TIMEOUT_MS = 1000;
+
 let peerFound = false;
 
 function createSession() {
@@ -259,9 +263,12 @@ async function announce(config) {
     instance.on('error', handleError);
 
     if (isWin) {
+      const winRegistrationTimeoutMs = Number.isInteger(config.winRegistrationTimeoutMs)
+        ? config.winRegistrationTimeoutMs
+        : DEFAULT_WIN_REGISTRATION_TIMEOUT_MS;
       winTimeout = setTimeout(() => {
         handleError(new Error('Windows registration timeout'));
-      }, 1000);
+      }, winRegistrationTimeoutMs);
     }
 
     let baseServiceName = config.mdnsName || config.mdnsNameOverride || generateBaseName(config.filename);

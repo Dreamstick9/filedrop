@@ -133,3 +133,36 @@ test('concurrent announce abandons the first call and keeps the final session', 
   assert.strictEqual(instances[1].listenerCount('response'), 0);
   assert.strictEqual(instances[1].listenerCount('query'), 0);
 });
+
+test('Windows registration timeout is configurable via config.winRegistrationTimeoutMs', async (t) => {
+  const os = require('os');
+  t.mock.method(os, 'platform', () => 'win32');
+
+  const { mdns, restore } = loadMdnsWithMock(() => {
+    const instance = new EventEmitter();
+    instance.query = () => {};
+    // Simulate a registration that never completes: respond() never invokes
+    // its callback, so only the Windows registration timeout can settle it.
+    instance.respond = () => {};
+    instance.destroy = () => {};
+    return instance;
+  });
+
+  t.after(restore);
+
+  const started = Date.now();
+  const result = await mdns.announce({
+    filename: 'sample.txt',
+    ip: '127.0.0.1',
+    port: 4321,
+    size: 12,
+    transferId: 'test-transfer',
+    mdnsName: 'sample-filedrop',
+    winRegistrationTimeoutMs: 50
+  });
+  const elapsed = Date.now() - started;
+
+  assert.strictEqual(result.mdnsAvailable, false);
+  assert.strictEqual(result.name, '');
+  assert.ok(elapsed < 900, `custom timeout should fire after ~50ms, took ${elapsed}ms`);
+});
