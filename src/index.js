@@ -256,9 +256,7 @@ async function main() {
         .replace(/[^a-zA-Z0-9]/g, "")
         .toLowerCase()
         .substring(0, 15) + "-filedrop";
-    const transferId = crypto.randomUUID
-      ? crypto.randomUUID()
-      : Math.random().toString(36).substring(2);
+    const transferId = crypto.randomUUID();
 
     // Generate Room Code for signaling/MeshTransport
     let roomCode = null;
