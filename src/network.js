@@ -10,7 +10,10 @@ function getFilterReason(name, info) {
     if (info.family !== 'IPv4') return 'not IPv4';
     if (info.internal || info.address.startsWith('127.')) return 'loopback';
     if (info.address.startsWith('169.254.')) return 'link-local';
-    if (info.address.startsWith('172.17.0.')) return 'Docker bridge';
+    // Docker bridge networks use the 172.16.0.0/12 private range (172.16.0.0
+    // through 172.31.255.255). Filter the whole range, not just the default
+    // 172.17.0.0/24 bridge, so user-defined networks are excluded too.
+    if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(info.address)) return 'Docker bridge';
     
     const nameLower = name.toLowerCase();
     if (nameLower.startsWith('vmnet') || nameLower.startsWith('vboxnet') || nameLower.startsWith('utun')) return 'VM adapter';
