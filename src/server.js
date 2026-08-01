@@ -14,6 +14,9 @@ const mime = require('mime');
 const pkg = require('../package.json');
 const VERSION = pkg.version;
 const FORGE_ASSET_PATH = require.resolve('node-forge/dist/forge.min.js');
+// forge.min.js is a static library asset that never changes per invocation,
+// so it can be cached by browsers for one year.
+const FORGE_JS_MAX_AGE_SECONDS = 31536000;
 
 const {
   DEFAULT_TIMEOUT_SECONDS,
@@ -502,7 +505,7 @@ async function createServer({
         res.end('Not found');
       });
       forgeStream.on('open', () => {
-        if (!res.headersSent) res.writeHead(200, { 'Content-Type': 'application/javascript', 'Cache-Control': 'max-age=31536000' });
+        if (!res.headersSent) res.writeHead(200, { 'Content-Type': 'application/javascript', 'Cache-Control': `max-age=${FORGE_JS_MAX_AGE_SECONDS}` });
         forgeStream.pipe(res);
       });
       return;
