@@ -7,6 +7,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const http = require('http');
+const crypto = require('crypto');
 const { createServer } = require('./server.js');
 const pkg = require('../package.json');
 const { createTempFile, cleanupTempFiles } = require('../test/helpers/create-temp-file.js');
@@ -113,7 +114,7 @@ test('Server Core', async (t) => {
     }
   });
 
-  await t.test('GET / injects text/plain and navigator.clipboard for clipboard transfers without deprecated execCommand', async () => {
+  await t.test('GET / injects text/plain and navigator.clipboard with fallback for HTTP clipboard transfers', async () => {
     const { server, shutdown } = await createServer({
       isClipboard: true,
       clipboardData: 'Test clipboard content',
@@ -128,7 +129,7 @@ test('Server Core', async (t) => {
 
     assert.match(bodyStr, /type: "text\/plain"/);
     assert.ok(bodyStr.includes('navigator.clipboard.writeText'));
-    assert.ok(!bodyStr.includes('execCommand'), 'Should not contain deprecated execCommand');
+    assert.ok(bodyStr.includes('execCommand'), 'Should contain fallback execCommand for HTTP LAN compatibility');
 
     await shutdown();
   });
@@ -683,7 +684,7 @@ test('Server Core', async (t) => {
     let shutdownFn = null;
 
     try {
-      delete crypto.randomUUID;
+      crypto.randomUUID = undefined;
 
       const filePath = createTempFile(1024, '.txt');
       const { server, shutdown, downloadPath } = await createServer({

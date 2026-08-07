@@ -49,7 +49,7 @@ async function main() {
   if (config.warnSensitive && !config.isClipboard) {
     const readline = require("readline");
 
-    async function confirmUnreadablePath(p) {
+    const confirmUnreadablePath = async (p) => {
       console.log(
         `\x1b[33mWarning: Could not read/inspect path: ${p}. Proceed anyway? [y/N]\x1b[0m`,
       );
@@ -63,9 +63,9 @@ async function main() {
           resolve(answer.toLowerCase() === "y");
         });
       });
-    }
+    };
 
-    async function getFilesRecursively(dir) {
+    const getFilesRecursively = async (dir) => {
       let results = [];
       let list;
       try {
@@ -258,7 +258,7 @@ async function main() {
         .substring(0, 15) + "-filedrop";
     const transferId = crypto.randomUUID
       ? crypto.randomUUID()
-      : Math.random().toString(36).substring(2);
+      : crypto.randomBytes(16).toString('hex');
 
     // Generate Room Code for signaling/MeshTransport
     let roomCode = null;

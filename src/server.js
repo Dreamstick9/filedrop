@@ -110,6 +110,7 @@ async function createServer({
   const connectionLimiter = maxConnections > 0 ? createConnectionLimiter(maxConnections) : null;
 
   const completedIPs = new Set();
+  let completedDownloads = 0;
   // Keep active transfer IPs locked for a short settle period so a retry that arrives
   // immediately after a disconnect or finish still hits the 429 guard instead of racing
   // with socket-close cleanup.
@@ -168,7 +169,7 @@ async function createServer({
   <title>Download</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    body { font-family: -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: #000; color: #fff; margin: 0; }
+    body { font-family: -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; background: #000; color: #fff; margin: 0; }
     .container { text-align: center; padding: 30px; border-radius: 16px; background: rgba(20,20,20,0.8); backdrop-filter: blur(10px); box-shadow: 0 8px 32px rgba(0,0,0,0.5); border: 1px solid #333; width: 80%; max-width: 320px; }
     h1 { font-size: 1.2rem; margin-bottom: 24px; word-break: break-all; color: #EAEAEA; }
     .progress-bar { width: 100%; height: 12px; background: #222; border-radius: 6px; overflow: hidden; margin-bottom: 12px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.8); }
@@ -420,18 +421,29 @@ async function createServer({
               const doCopy = () => {
                 btn.innerText = 'Copied!';
                 btn.style.background = '#30D158';
-                window.close();
+              };
+              const fallbackCopy = () => {
+                try {
+                  const clipArea = document.getElementById('clipText');
+                  if (clipArea) {
+                    clipArea.select();
+                    document.execCommand('copy');
+                    doCopy();
+                  } else {
+                    btn.innerText = 'Copy Failed';
+                    btn.style.background = '#FF453A';
+                  }
+                } catch(e) {
+                  btn.innerText = 'Copy Failed';
+                  btn.style.background = '#FF453A';
+                }
               };
               if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(text).then(doCopy).catch(err => {
-                  console.error('navigator.clipboard failed:', err);
-                  btn.innerText = 'Copy Failed';
-                  btn.style.background = '#FF453A';
+                  fallbackCopy();
                 });
               } else {
-                console.error('Clipboard API unsupported');
-                btn.innerText = 'Clipboard API Unsupported';
-                btn.style.background = '#FF453A';
+                fallbackCopy();
               }
             });
           } else {
@@ -452,7 +464,6 @@ async function createServer({
             setClipText("Error: Decryption failed or link expired.");
             if (statusEl) statusEl.style.color = "#FF453A";
             console.error(err);
-            ${isClipboard ? 'window.close();' : ''}
           } finally {
             finishDownload(attemptId);
           }
@@ -516,7 +527,7 @@ async function createServer({
 
     // Serve the HTML Decryptor Interface
     if (pathname === '/' || pathname === `/${fileName}`) {
-      if (completedIPs.has(clientIp)) {
+      if (completedDownloads >= downloadLimit || (downloadLimit === 1 && completedIPs.has(clientIp))) {
         res.writeHead(410, { 'Content-Type': 'text/plain' });
         res.end('This file has already been transferred.');
         return;
@@ -526,7 +537,7 @@ async function createServer({
         res.end('You are already downloading this file.');
         return;
       }
-      if (completedIPs.size + activeIPs.size >= downloadLimit) {
+      if (completedDownloads + activeIPs.size >= downloadLimit) {
         res.writeHead(429, { 'Content-Type': 'text/plain', 'Retry-After': '10' });
         res.end('Too Many Requests');
         return;
@@ -545,7 +556,7 @@ async function createServer({
       return;
     }
 
-    if (completedIPs.has(clientIp) && method === 'GET') {
+    if ((completedDownloads >= downloadLimit || (downloadLimit === 1 && completedIPs.has(clientIp))) && method === 'GET') {
       res.writeHead(410, {
         'Content-Type': 'text/plain',
         'X-Filedrop-Version': version,
@@ -564,7 +575,7 @@ async function createServer({
       });
       return;
     }
-    if (completedIPs.size + activeIPs.size >= downloadLimit) {
+    if (completedDownloads + activeIPs.size >= downloadLimit) {
       res.writeHead(429, { 'Content-Type': 'text/plain', 'Retry-After': '10' });
       res.end('Too Many Requests', () => {
         req.socket.destroy();
@@ -587,7 +598,7 @@ async function createServer({
 
     // It's the /download endpoint, encrypt and stream
     if (typeof onTransferStart === 'function' && !activeIPs.has(clientIp)) {
-      onTransferStart(activeIPs.size + completedIPs.size + 1, downloadLimit);
+      onTransferStart(activeIPs.size + completedDownloads + 1, downloadLimit);
     }
     activeIPs.add(clientIp);
 
@@ -625,7 +636,8 @@ async function createServer({
       if (cleanupTimer) clearTimeout(cleanupTimer);
       activeIPs.delete(clientIp);
       completedIPs.add(clientIp);
-      onTransferComplete(completedIPs.size, downloadLimit);
+      completedDownloads++;
+      onTransferComplete(completedDownloads, downloadLimit);
     };
 
     const markTransferDisconnected = () => {

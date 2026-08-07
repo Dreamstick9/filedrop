@@ -1,5 +1,3 @@
-const os = require('os');
-
 /**
  * Platform detection utilities
  */

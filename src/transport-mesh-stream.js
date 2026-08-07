@@ -128,9 +128,17 @@ class MeshStreamSender extends EventEmitter {
           const authTag = this.cipher.getAuthTag();
           this.sendChunk(authTag);
 
-          this.cleanup();
-          this.emit('complete');
-          resolve();
+          const checkDrainAndResolve = () => {
+            if (this.destroyed) return;
+            if (this.dataChannel && typeof this.dataChannel.bufferedAmount === 'number' && this.dataChannel.bufferedAmount > 0) {
+              setTimeout(checkDrainAndResolve, 10);
+              return;
+            }
+            this.cleanup();
+            this.emit('complete');
+            resolve();
+          };
+          checkDrainAndResolve();
         } catch (err) {
           this.destroy(err);
           reject(err);
@@ -261,12 +269,14 @@ class MeshStreamReceiver extends EventEmitter {
     const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
 
     if (this.state === 1) { // WAITING_IV
-      if (buf.length < 12) {
-        this.destroy(new Error('Invalid initial payload: IV must be at least 12 bytes'));
+      if (!this.ivBuffer) this.ivBuffer = Buffer.alloc(0);
+      this.ivBuffer = Buffer.concat([this.ivBuffer, buf]);
+      if (this.ivBuffer.length < 12) {
         return;
       }
-      this.iv = buf.subarray(0, 12);
-      const remaining = buf.subarray(12);
+      this.iv = this.ivBuffer.subarray(0, 12);
+      const remaining = this.ivBuffer.subarray(12);
+      this.ivBuffer = null;
       this.state = 2; // STREAMING
 
       if (remaining.length > 0) {

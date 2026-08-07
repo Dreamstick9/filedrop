@@ -64,7 +64,7 @@ test('mDNS query failures during probe are warned and cleaned up', async (t) => 
     name: 'sample-filedrop',
     mdnsAvailable: true
   });
-  assert.strictEqual(instance.listenerCount('response'), 0);
+  assert.strictEqual(instance.listenerCount('response'), 1);
   assert.ok(
     warnings.some((message) =>
       message.includes(

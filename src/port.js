@@ -30,7 +30,7 @@ function isPortAvailable(port) {
   return new Promise((resolve) => {
     const server = net.createServer();
     
-    server.once('error', (err) => {
+    server.once('error', () => {
       // If it's already in use, or permission denied, it's not available
       resolve(false);
     });

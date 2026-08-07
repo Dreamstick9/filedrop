@@ -67,4 +67,24 @@ test('safeRun Utility', async (t) => {
     assert.ok(loggedMessage.includes('Test error with stack'), 'Should include the error message');
     assert.ok(loggedMessage.includes(testError.stack), 'Should include the error stack trace when debug is enabled');
   });
+
+  // Test case 4: Non-Error / null / primitive thrown values
+  await t.test('safeRun safely handles null, undefined, or string errors without crashing', async () => {
+    const originalError = console.error;
+    let loggedMessage = '';
+    console.error = (msg) => { loggedMessage += msg + '\n'; };
+
+    await safeRun(async () => {
+      throw null;
+    }, 'NullLabel');
+
+    await safeRun(async () => {
+      throw 'string error';
+    }, 'StringLabel');
+
+    console.error = originalError;
+
+    assert.ok(loggedMessage.includes('Warning: error during NullLabel: null'));
+    assert.ok(loggedMessage.includes('Warning: error during StringLabel: string error'));
+  });
 });

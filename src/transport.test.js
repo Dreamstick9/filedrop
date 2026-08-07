@@ -22,8 +22,7 @@ test('LanTransport Contract & Implementation', async (t) => {
 
     const transport = new LanTransport();
     let startEventFired = false;
-
-    transport.on('transfer-start', (data) => {
+    transport.on('transfer-start', () => {
       startEventFired = true;
     });
 
@@ -35,6 +34,7 @@ test('LanTransport Contract & Implementation', async (t) => {
     });
 
     assert.strictEqual(handle.transportId, 'lan');
+    assert.strictEqual(startEventFired, false);
     assert.ok(typeof handle.keyHex === 'string' && handle.keyHex.length > 0);
     assert.ok(handle.shareUrl.includes('127.0.0.1'));
     assert.ok(!handle.shareUrl.includes(':0/'), 'shareUrl must not contain port 0 when bound to ephemeral port');

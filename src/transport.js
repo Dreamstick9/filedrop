@@ -159,6 +159,13 @@ async function pickTransport({ mesh, signalUrl, mdns, timeoutMs = 3000, verbose 
 
   // Step 4: 3s timeout with signal URL
   if (signalUrl) {
+    if (!mdns || typeof mdns.on !== 'function') {
+      if (verbose) {
+        console.log('[filedrop:transport] Step 4: Signal URL present and mDNS not active. Selecting Mesh.');
+      }
+      return 'mesh';
+    }
+
     if (verbose) {
       console.log(`[filedrop:transport] Step 4 (boot timeout): Signal URL present (${signalUrl}). Waiting up to ${timeoutMs}ms for mDNS peer arrival...`);
     }

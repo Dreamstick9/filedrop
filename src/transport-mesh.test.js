@@ -7,6 +7,7 @@ const assert = require('node:assert');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const WebSocket = require('ws');
 const { createTempFile, cleanupTempFiles } = require('../test/helpers/create-temp-file.js');
 const { startServer, stopServer } = require('../packages/filedrop-signal/server.js');
 const { MeshTransport } = require('./transport-mesh.js');

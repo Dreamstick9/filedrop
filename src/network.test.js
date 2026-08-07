@@ -18,7 +18,7 @@ test('Network Interface Discovery', async (t) => {
         console.log = originalLog;
     });
 
-    await t.test('Machine with only loopback', (t) => {
+    await t.test('Machine with only loopback', () => {
         os.networkInterfaces = () => ({
             lo0: [{ address: '127.0.0.1', family: 'IPv4', internal: true }]
         });
@@ -30,7 +30,7 @@ test('Network Interface Discovery', async (t) => {
         }, /exit_2/);
     });
 
-    await t.test('Machine with Wi-Fi + Docker bridge', (t) => {
+    await t.test('Machine with Wi-Fi + Docker bridge', () => {
         os.networkInterfaces = () => ({
             lo0: [{ address: '127.0.0.1', family: 'IPv4', internal: true }],
             en0: [{ address: '192.168.1.10', family: 'IPv4', internal: false }],
@@ -42,7 +42,7 @@ test('Network Interface Discovery', async (t) => {
         assert.strictEqual(result.info.address, '192.168.1.10');
     });
 
-    await t.test('Machine with VPN + Ethernet', (t) => {
+    await t.test('Machine with VPN + Ethernet', () => {
         os.networkInterfaces = () => ({
             eth0: [{ address: '10.0.0.5', family: 'IPv4', internal: false }],
             utun0: [{ address: '10.8.0.2', family: 'IPv4', internal: false }]
@@ -53,7 +53,7 @@ test('Network Interface Discovery', async (t) => {
         assert.strictEqual(result.info.address, '10.0.0.5');
     });
 
-    await t.test('Machine on Windows with Wi-Fi', (t) => {
+    await t.test('Machine on Windows with Wi-Fi', () => {
         os.networkInterfaces = () => ({
             'Wi-Fi': [{ address: '192.168.0.50', family: 'IPv4', internal: false }],
             'Ethernet 2': [{ address: '169.254.10.10', family: 'IPv4', internal: false }]
@@ -64,7 +64,7 @@ test('Network Interface Discovery', async (t) => {
         assert.strictEqual(result.info.address, '192.168.0.50');
     });
 
-    await t.test('--bind override with valid IP', (t) => {
+    await t.test('--bind override with valid IP', () => {
         os.networkInterfaces = () => ({
             en0: [{ address: '192.168.1.10', family: 'IPv4', internal: false }],
             en1: [{ address: '10.10.0.5', family: 'IPv4', internal: false }]
@@ -75,7 +75,7 @@ test('Network Interface Discovery', async (t) => {
         assert.strictEqual(result.info.address, '10.10.0.5');
     });
 
-    await t.test('--bind override with invalid IP', (t) => {
+    await t.test('--bind override with invalid IP', () => {
         os.networkInterfaces = () => ({
             en0: [{ address: '192.168.1.10', family: 'IPv4', internal: false }]
         });
@@ -95,7 +95,7 @@ test('Network Interface Discovery', async (t) => {
         }, /exit_1/);
     });
 
-    await t.test('Subnet Validation Warning', (t) => {
+    await t.test('Subnet Validation Warning', () => {
         os.networkInterfaces = () => ({
             en0: [{ address: '8.8.8.8', family: 'IPv4', internal: false }]
         });

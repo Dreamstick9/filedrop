@@ -3,7 +3,7 @@
  */
 const test = require('node:test');
 const assert = require('node:assert');
-const { renderQR, renderMetadataBox } = require('./qr.js');
+const { renderQR } = require('./qr.js');
 const platform = require('./platform.js');
 
 // Mock supportsColor by overriding platform for tests if needed, but since platform is required by qr.js

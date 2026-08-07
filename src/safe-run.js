@@ -15,8 +15,9 @@ async function safeRun(fn, label) {
   try {
     await fn();
   } catch (err) {
-    console.error(`Warning: error during ${label}: ${err.message}`);
-    if (process.env.FILEDROP_DEBUG) {
+    const msg = err?.message ?? String(err);
+    console.error(`Warning: error during ${label}: ${msg}`);
+    if (process.env.FILEDROP_DEBUG && err?.stack) {
       console.error(err.stack);
     }
   }

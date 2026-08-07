@@ -154,7 +154,7 @@ test('Lifecycle Manager', async (t) => {
     assert.strictEqual(lm.failsafeExitTimeout, 2000);
   });
 
-  await t.test('mdns.deregister errors during shutdown emit shutdown-error event', async (t) => {
+  await t.test('mdns.deregister errors during shutdown emit shutdown-error event', async () => {
     const mdnsMock = {
       deregister: async () => { throw new Error('mDNS teardown failed'); }
     };

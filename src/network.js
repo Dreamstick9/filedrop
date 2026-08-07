@@ -10,9 +10,9 @@ function getFilterReason(name, info) {
     if (info.family !== 'IPv4') return 'not IPv4';
     if (info.internal || info.address.startsWith('127.')) return 'loopback';
     if (info.address.startsWith('169.254.')) return 'link-local';
-    if (info.address.startsWith('172.17.0.')) return 'Docker bridge';
     
     const nameLower = name.toLowerCase();
+    if (info.address.startsWith('172.17.0.') || nameLower.startsWith('docker') || nameLower.startsWith('br-')) return 'Docker bridge';
     if (nameLower.startsWith('vmnet') || nameLower.startsWith('vboxnet') || nameLower.startsWith('utun')) return 'VM adapter';
     if (nameLower.startsWith('tun') || nameLower.startsWith('tap') || nameLower.startsWith('wg') || nameLower.startsWith('ppp')) return 'VPN tunnel';
     

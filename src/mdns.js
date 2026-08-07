@@ -285,6 +285,19 @@ async function announce(config) {
       session.activeOnQuery = makeOnQuery(session, config.verbose);
       session.mdnsInstance.on('query', session.activeOnQuery);
 
+      session.activeOnResponse = (packet) => {
+        const answers = [].concat(packet.answers || [], packet.additionals || [], packet.authorities || []);
+        const hasAnyPeer = answers.some(ans => {
+          const serviceName = ans.type === 'PTR' ? ans.data : ans.name;
+          return typeof serviceName === 'string' && serviceName.endsWith('-filedrop._http._tcp.local');
+        });
+        if (hasAnyPeer) {
+          peerFound = true;
+          module.exports.emit('peer-found', packet);
+        }
+      };
+      session.mdnsInstance.on('response', session.activeOnResponse);
+
       try {
         session.mdnsInstance.respond({ answers: session.currentRecords }, (err) => {
           if (announceHandle.settled) return;
@@ -315,37 +328,39 @@ async function deregister() {
   }
 
   return new Promise((resolve) => {
-    const goodbyeRecords = session.currentRecords.map(r => ({ ...r, ttl: 0 }));
-
-    try {
-      session.mdnsInstance.respond({ answers: goodbyeRecords }, () => {
-        setTimeout(() => {
-          try {
-            if (session.activeOnQuery) {
-              session.mdnsInstance.removeListener('query', session.activeOnQuery);
-              session.activeOnQuery = null;
-            }
-            session.mdnsInstance.destroy();
-          } catch (e) { console.error("[mdns] Failed to remove listener or destroy instance:", e); }
-          resetSession();
-          resolve();
-        }, 200);
-      });
-    } catch (e) {
-      console.warn("[mdns] deregister: error sending goodbye records:", e);
+    let resolved = false;
+    const finishDeregister = () => {
+      if (resolved) return;
+      resolved = true;
       try {
         if (session.activeOnQuery && session.mdnsInstance) {
           session.mdnsInstance.removeListener('query', session.activeOnQuery);
           session.activeOnQuery = null;
         }
+        if (session.activeOnResponse && session.mdnsInstance) {
+          session.mdnsInstance.removeListener('response', session.activeOnResponse);
+          session.activeOnResponse = null;
+        }
         if (session.mdnsInstance) {
           session.mdnsInstance.destroy();
         }
-      } catch (destroyError) {
-        console.error("[mdns] Failed to destroy instance during deregister error:", destroyError);
-      }
+      } catch (e) { console.error("[mdns] Failed to remove listener or destroy instance:", e); }
       resetSession();
       resolve();
+    };
+
+    const safetyTimer = setTimeout(finishDeregister, 300);
+    const goodbyeRecords = (session.currentRecords || []).map(r => ({ ...r, ttl: 0 }));
+
+    try {
+      session.mdnsInstance.respond({ answers: goodbyeRecords }, () => {
+        clearTimeout(safetyTimer);
+        setTimeout(finishDeregister, 100);
+      });
+    } catch (e) {
+      console.warn("[mdns] deregister: error sending goodbye records:", e);
+      clearTimeout(safetyTimer);
+      finishDeregister();
     }
   });
 }

@@ -5,6 +5,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const WebSocket = require('ws');
 
 let ZipArchive = null;
 async function getZipArchive() {
@@ -293,15 +294,17 @@ class MeshTransport {
         // Backpressure check
         if (typeof this.ws.bufferedAmount === 'number' && this.ws.bufferedAmount > 1024 * 1024) {
           sourceStream.pause();
-          this.backpressureTimer = setInterval(() => {
-            if (!this.ws || typeof this.ws.bufferedAmount !== 'number' || this.ws.bufferedAmount === 0) {
-              if (this.backpressureTimer) {
-                clearInterval(this.backpressureTimer);
-                this.backpressureTimer = null;
+          if (!this.backpressureTimer) {
+            this.backpressureTimer = setInterval(() => {
+              if (!this.ws || typeof this.ws.bufferedAmount !== 'number' || this.ws.bufferedAmount === 0) {
+                if (this.backpressureTimer) {
+                  clearInterval(this.backpressureTimer);
+                  this.backpressureTimer = null;
+                }
+                sourceStream.resume();
               }
-              sourceStream.resume();
-            }
-          }, 50);
+            }, 50);
+          }
         }
       }
     });
@@ -344,7 +347,11 @@ class MeshTransport {
       clearInterval(this.backpressureTimer);
       this.backpressureTimer = null;
     }
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    if (this.sourceStream) {
+      try { this.sourceStream.destroy(); } catch (e) { /* ignore */ }
+      this.sourceStream = null;
+    }
+    if (this.ws && (this.ws.readyState === 1 || (WebSocket && this.ws.readyState === WebSocket.OPEN))) {
       this.ws.close();
     }
     if (this.onTransferError) {
@@ -368,7 +375,7 @@ class MeshTransport {
       this.ws.onmessage = null;
       try {
         this.ws.close();
-      } catch {}
+      } catch (e) { /* ignore */ }
       this.ws = null;
     }
   }

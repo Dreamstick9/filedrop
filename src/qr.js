@@ -211,22 +211,19 @@ function updateStatus(status, options = {}) {
   if (!process.stdout.isTTY) return;
   const { color = supportsColor() } = options;
 
-  let prefix, msg, msgLen;
+  let prefix, msg;
   if (status.startsWith("transferring") || status.startsWith("Downloads:")) {
     prefix = color ? `  │  ⬇️  ` : `  |  [Wait]  `;
     msg = status;
-    msgLen = color ? 6 + msg.length : 10 + msg.length;
   } else if (status === "done") {
     prefix = color ? `  │  ✅  ` : `  |  [Done]  `;
     msg = `Done. Goodbye.`;
-    msgLen = color ? 6 + msg.length : 10 + msg.length;
   } else {
     prefix = color ? `  │  ℹ️  ` : `  |  [Info]  `;
     msg = status;
-    msgLen = color ? 6 + msg.length : 10 + msg.length;
   }
 
-  const padding = Math.max(0, boxWidth - msgLen);
+  const padding = Math.max(0, boxWidth + 3 - prefix.length - msg.length);
   const suffix = color ? ` │` : ` |`;
   const line = `${prefix}${msg}${" ".repeat(padding)}${suffix}`;
 

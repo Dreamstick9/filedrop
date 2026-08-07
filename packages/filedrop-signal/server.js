@@ -269,7 +269,9 @@ function handleRequest(req, res) {
 
             let decryptedBuffer;
             if (window.crypto && window.crypto.subtle) {
-              const keyBytes = new Uint8Array(hash.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+              const hexMatches = hash ? hash.match(/.{1,2}/g) : null;
+              if (!hexMatches) throw new Error("Invalid decryption key in URL hash.");
+              const keyBytes = new Uint8Array(hexMatches.map(byte => parseInt(byte, 16)));
               const key = await crypto.subtle.importKey(
                 "raw", keyBytes, { name: "AES-GCM" }, false, ["decrypt"]
               );
