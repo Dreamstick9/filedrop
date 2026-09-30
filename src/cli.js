@@ -21,7 +21,8 @@ const {
   DEFAULT_RATE_LIMIT_WINDOW_MS,
   DEFAULT_RATE_LIMIT_MAX,
   DEFAULT_MAX_CONNECTIONS,
-  DEFAULT_ICE_TIMEOUT_SECONDS
+  DEFAULT_ICE_TIMEOUT_SECONDS,
+  DEFAULT_MDNS_TIMEOUT_MS
 } = require('./constants');
 const { MIN_PORT, MAX_PORT } = require('./port');
 
@@ -55,6 +56,8 @@ Options:
   --qr / --no-qr         Show or hide the QR code (default: show)
   --qr-compact           Print QR code without surrounding metadata box
   --no-mdns              Disable mDNS broadcasting
+  --mdns-timeout <ms>    Milliseconds to wait for Windows mDNS registration
+                         before giving up (default: ${DEFAULT_MDNS_TIMEOUT_MS})
   --mesh / --no-mesh     Enable or disable WebRTC mesh transport (default: auto)
   --signal-url <url>, --mesh-signal <url>
                          Signaling server URL for WebRTC mesh fallback (overrides FILEDROP_MESH_SIGNAL_URL)
@@ -76,7 +79,7 @@ filedrop v${VERSION} — ${REPOSITORY_URL}`);
 function parseArgs(argv) {
   const args = minimist(argv.slice(2), {
     boolean: ['qr-compact', 'verbose', 'version', 'help', 'qr', 'mdns', 'clipboard', 'warn-sensitive', 'relay'],
-    string: ['port', 'bind', 'timeout', 'transfer-timeout', 'rate-limit-window', 'rate-limit-max', 'name', 'color', 'shutdown-grace-ms', 'token', 'max-connections', 'signal-url', 'mesh-signal', 'signal-host', 'relay-password', 'ice-timeout', 'download-limit'],
+    string: ['port', 'bind', 'timeout', 'transfer-timeout', 'rate-limit-window', 'rate-limit-max', 'name', 'color', 'shutdown-grace-ms', 'token', 'max-connections', 'signal-url', 'mesh-signal', 'signal-host', 'relay-password', 'ice-timeout', 'download-limit', 'mdns-timeout'],
     alias: {
       p: "port",
       b: "bind",
@@ -94,6 +97,7 @@ function parseArgs(argv) {
       timeout: String(DEFAULT_TIMEOUT_SECONDS),
       'transfer-timeout': String(DEFAULT_TRANSFER_TIMEOUT_SECONDS),
       'ice-timeout': String(DEFAULT_ICE_TIMEOUT_SECONDS),
+      'mdns-timeout': String(DEFAULT_MDNS_TIMEOUT_MS),
       'rate-limit-window': String(DEFAULT_RATE_LIMIT_WINDOW_MS),
       'rate-limit-max': String(DEFAULT_RATE_LIMIT_MAX),
       'shutdown-grace-ms': String(DEFAULT_SHUTDOWN_GRACE_MS),
@@ -278,6 +282,14 @@ function parseArgs(argv) {
     process.exit(1);
   }
 
+  const mdnsTimeoutArg = String(args['mdns-timeout']);
+  const mdnsTimeout = Number(mdnsTimeoutArg);
+  if (!/^\d+$/.test(mdnsTimeoutArg) || !Number.isSafeInteger(mdnsTimeout) || mdnsTimeout <= 0 || mdnsTimeout > 2147483647) {
+    console.error('filedrop: error: --mdns-timeout must be a positive integer no greater than 2147483647');
+    console.error("Run 'filedrop --help' for usage.");
+    process.exit(1);
+  }
+
   let token = null;
   if (args.token !== undefined) {
     if (args.token === '') {
@@ -308,6 +320,7 @@ function parseArgs(argv) {
     qr: args.qr,
     qrCompact: args["qr-compact"],
     mdns: args.mdns,
+    mdnsTimeout,
     verbose: args.verbose,
     color: args.color,
     mesh: args.mesh,

@@ -58,6 +58,36 @@ test('CLI Parser', async (t) => {
     }
   });
 
+  await t.test('Parses --mdns-timeout, defaults to 1000 and rejects invalid values', () => {
+    const filePath = createTempFile(1024, '.txt');
+    assert.strictEqual(parseArgs(['node', 'filedrop', filePath]).mdnsTimeout, 1000);
+    assert.strictEqual(parseArgs(['node', 'filedrop', filePath, '--mdns-timeout', '2500']).mdnsTimeout, 2500);
+
+    const originalExit = process.exit;
+    const originalError = console.error;
+    let exitCode = null;
+    let errors = [];
+    process.exit = (code) => {
+      exitCode = code;
+    };
+    console.error = (msg) => {
+      errors.push(msg);
+    };
+
+    try {
+      for (const bad of ['0', '-5', '1.5', 'abc', '2147483648']) {
+        exitCode = null;
+        errors = [];
+        parseArgs(['node', 'filedrop', filePath, '--mdns-timeout', bad]);
+        assert.strictEqual(exitCode, 1, `expected ${bad} to be rejected`);
+        assert.ok(errors.some(err => err.includes('--mdns-timeout must be a positive integer')));
+      }
+    } finally {
+      process.exit = originalExit;
+      console.error = originalError;
+    }
+  });
+
   await t.test('Parses custom rate limit options', () => {
     const filePath = createTempFile(1024, '.txt');
     const config = parseArgs([

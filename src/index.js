@@ -27,7 +27,7 @@ const { pickTransport } = require("./transport");
  *   findAvailablePort(startPort?: number, endPort?: number): Promise<number>
  *
  * mdns.js:
- *   announce(config: { mdnsName: string, filename: string, size: number, transferId: string, ip: string, port: number, verbose?: boolean }): Promise<{ name: string, mdnsAvailable: boolean }>
+ *   announce(config: { mdnsName: string, filename: string, size: number, transferId: string, ip: string, port: number, verbose?: boolean, mdnsTimeout?: number }): Promise<{ name: string, mdnsAvailable: boolean }>
  *   deregister(): Promise<void>
  *
  * server.js:
@@ -278,6 +278,7 @@ async function main() {
         ip: ip,
         port: port,
         verbose: config.verbose,
+        mdnsTimeout: config.mdnsTimeout,
       });
     }
 

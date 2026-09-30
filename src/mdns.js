@@ -14,6 +14,7 @@ const os = require('os');
 const path = require('path');
 const mDNS = require('multicast-dns');
 const EventEmitter = require('events');
+const { DEFAULT_MDNS_TIMEOUT_MS } = require('./constants');
 
 let peerFound = false;
 
@@ -126,6 +127,7 @@ function resetSession() {
 
 function abortActiveAnnounce() {
   if (session.activeAnnounce && !session.activeAnnounce.settled) {
+    if (session.activeAnnounce.clearTimer) session.activeAnnounce.clearTimer();
     session.activeAnnounce.settled = true;
     session.activeAnnounce.resolve({ name: '', mdnsAvailable: false });
   }
@@ -197,6 +199,10 @@ async function probe(instance, name, maxSuffix = 10) {
 /**
  * Announces the service via mDNS
  * @param {Object} config
+ * @param {number} [config.mdnsTimeout] - Milliseconds to wait for Windows mDNS
+ *   registration to complete before treating it as failed (default: DEFAULT_MDNS_TIMEOUT_MS,
+ *   currently 1000ms). Only used on Windows, where mDNS registration has no reliable
+ *   success signal.
  * @returns {Promise<{ name: string, mdnsAvailable: boolean }>}
  */
 async function announce(config) {
@@ -259,9 +265,13 @@ async function announce(config) {
     instance.on('error', handleError);
 
     if (isWin) {
+      const mdnsTimeout = config.mdnsTimeout || DEFAULT_MDNS_TIMEOUT_MS;
       winTimeout = setTimeout(() => {
         handleError(new Error('Windows registration timeout'));
-      }, 1000);
+      }, mdnsTimeout);
+      // An abandoned announce (deregister() or a newer announce()) must not
+      // leave a long configurable timer keeping the process alive.
+      announceHandle.clearTimer = () => clearTimeout(winTimeout);
     }
 
     let baseServiceName = config.mdnsName || config.mdnsNameOverride || generateBaseName(config.filename);
