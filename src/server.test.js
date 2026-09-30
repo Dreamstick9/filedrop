@@ -47,6 +47,27 @@ test('Server Core', async (t) => {
     await shutdown();
   });
 
+  await t.test('GET / keeps the decryption key until the user can retry the save (#134)', async () => {
+    const filePath = createTempFile(1024, '.txt');
+    const { server, shutdown } = await createServer({
+      filePath,
+      port: 0,
+      onTransferComplete: () => {},
+      onTransferError: () => {}
+    });
+
+    const port = server.address().port;
+    const res = await httpClient(`http://127.0.0.1:${port}/`);
+    const body = res.body.toString();
+
+    assert.ok(body.includes('id="saveBtn"'), 'manual Save button is rendered');
+    assert.ok(body.includes("addEventListener('pagehide'"), 'key is erased on pagehide');
+    assert.ok(!body.includes('URL.revokeObjectURL(url)'),
+      'blob URL stays valid so Save file works, including after a bfcache restore');
+
+    await shutdown();
+  });
+
   await t.test('GET / includes hashchange listener for late decryption key addition (#133)', async () => {
     const filePath = createTempFile(1024, '.txt');
     const { server, shutdown } = await createServer({

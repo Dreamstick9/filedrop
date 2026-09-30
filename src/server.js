@@ -228,6 +228,7 @@ async function createServer({
         <span id="statusText">Connecting...</span>
         <span id="percentText">0%</span>
       </div>
+      <button id="saveBtn" hidden style="margin-top:20px; padding:12px 24px; border-radius:8px; border:none; background:#0A84FF; color:white; font-weight:bold; font-size:16px; cursor:pointer; width:100%;">Save file</button>
     `}
 </div>
   <button id="scrollTopBtn" aria-label="Scroll to top" title="Scroll to top">&#8593;</button>
@@ -406,6 +407,11 @@ async function createServer({
           setPercent("100%");
           setProgressWidth("100%");
 
+          // Security measure: Erase the decryption key from the address bar
+          const eraseKeyFromUrl = () => {
+            window.history.replaceState({}, document.title, window.location.pathname);
+          };
+
           const blob = new Blob([decryptedBuffer], { type: ${JSON.stringify(contentType)} });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
@@ -447,18 +453,40 @@ async function createServer({
               }
             });
           } else {
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+            const triggerSave = () => {
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+            };
+            triggerSave();
+
+            // The browser gives no signal that the automatic download was
+            // accepted (it can be blocked without a user gesture), and the
+            // transfer is one-shot, so keep the decrypted blob and a manual
+            // Save button around. The key stays in the URL until the user
+            // saves manually or leaves the page.
+            const saveBtn = document.getElementById('saveBtn');
+            if (saveBtn) {
+              saveBtn.hidden = false;
+              saveBtn.addEventListener('click', () => {
+                triggerSave();
+                eraseKeyFromUrl();
+              });
+            }
+            // Don't revoke the blob URL here: if the page is restored from
+            // the back-forward cache the Save button must still work. The
+            // URL is released when the document is discarded.
+            window.addEventListener('pagehide', eraseKeyFromUrl);
           }
 
-            // Security measure: Erase the decryption key from the address bar
-            window.history.replaceState({}, document.title, window.location.pathname);
+            if (${isClipboard}) {
+              // Content is already on screen, nothing left to retry
+              eraseKeyFromUrl();
+            }
             
             setStatus("Done");
             const h1 = document.querySelector('h1');
-            if (h1) h1.innerText = "Download Started - Safe to close";
+            if (h1 && !${isClipboard}) h1.innerText = "Download started - if nothing was saved, tap Save file";
           } catch (err) {
             setStatus("Decryption Failed");
             setClipText("Error: Decryption failed or link expired.");
